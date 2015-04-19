@@ -1,5 +1,6 @@
 #include "pin.H"
 #include <malloc.h>
+#include <unistd.h>
 #include <iostream>
 
 // Constants for heap handling
@@ -10,7 +11,7 @@ size_t MALLOC_ALIGN_MASK = ~(2 * SIZE_SZ - 1);
 // Some global variables
 
 size_t last_malloc_size;
-
+size_t HEAP_BASE = 0;
 
 VOID RecordMallocReturned(ADDRINT * addr)
 {
@@ -19,10 +20,12 @@ VOID RecordMallocReturned(ADDRINT * addr)
 		cerr << "Heap full!";
 		return;
 	}
-
-	size_t size = 0;
-	PIN_SafeCopy(&size, addr-1, SIZE_SZ);
-	cerr << "malloc(" << last_malloc_size << ")\treturned "  << addr << " (" << (size & MALLOC_ALIGN_MASK ) << ")" << endl;
+	if(((size_t)addr & (ADDRINT)0xfff00000) == (HEAP_BASE & (size_t)0xfff00000))
+	{
+		size_t size = 0;
+		PIN_SafeCopy(&size, addr-1, SIZE_SZ);
+		cerr << "malloc(" << last_malloc_size <<")\treturned "  << addr << " (" << (size & MALLOC_ALIGN_MASK ) << ")" << endl;
+	}
 }
 
 VOID RecordMallocInvocation(size_t size)
@@ -60,6 +63,7 @@ int main(int argc, char **argv)
 	PIN_Init(argc, argv);
 	PIN_InitSymbols();
 	IMG_AddInstrumentFunction(Image, NULL);
+	HEAP_BASE = (size_t)sbrk(0);
 	cerr << endl;
 	PIN_StartProgram();
 	return 0;
