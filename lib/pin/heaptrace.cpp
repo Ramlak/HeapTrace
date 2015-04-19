@@ -1,19 +1,27 @@
 #include "pin.H"
+#include <malloc.h>
 #include <iostream>
 
-VOID RecordMalloc(ADDRINT addr)
+size_t SIZE_SZ = sizeof(size_t);
+size_t MALLOC_ALIGN_MASK = ~(2 * SIZE_SZ - 1);
+
+
+VOID RecordMalloc(ADDRINT * addr)
 {
 	if(addr == 0)
 	{
 		cerr << "Heap full!";
 		return;
 	}
-	cerr << "Malloc recorded! " << hex << addr << endl;
+
+	size_t size = 0;
+	PIN_SafeCopy(&size, addr-1, SIZE_SZ);
+	cerr << "Malloc recorded! "  << addr << " " << (size & MALLOC_ALIGN_MASK ) << endl;
 }
 
-VOID RecordFree(ADDRINT addr)
+VOID RecordFree(ADDRINT * addr)
 {
-	cerr << "Freeing " << hex << addr << endl;
+	cerr << "Freeing " << addr << endl;
 }
 
 VOID Image(IMG img, VOID *v)
@@ -40,6 +48,7 @@ int main(int argc, char **argv)
 	PIN_Init(argc, argv);
 	PIN_InitSymbols();
 	IMG_AddInstrumentFunction(Image, NULL);
+	cerr << endl;
 	PIN_StartProgram();
 	return 0;
 }
