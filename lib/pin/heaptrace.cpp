@@ -10,10 +10,47 @@ size_t MALLOC_ALIGN_MASK = ~(2 * SIZE_SZ - 1);
 
 // Some global variables
 
-size_t last_malloc_size;
+struct malloc_call
+{
+	size_t requested_size;
+	size_t allocated_size;
+	size_t returned_value;
+	size_t call_addr; // form now it's return address
+};
+
+struct realloc_call
+{
+	size_t ptr;
+	size_t requested_size;
+	size_t allocated_size;
+	size_t returned_value;
+	size_t call_addr;
+};
+
+struct free_call
+{
+	size_t ptr;
+	size_t returned_value;
+	size_t call_addr;
+};
+
+struct calloc_call
+{
+	size_t num;
+	size_t element_size;
+	size_t allocated_size;
+	size_t returned_value;
+	size_t call_addr;
+};
+
+struct malloc_call last_malloc;
+struct realloc_call last_realloc;
+struct calloc_call last_calloc;
+struct free_call last_free;
+
 size_t HEAP_BASE = 0;
 
-VOID RecordMallocReturned(ADDRINT * addr)
+VOID RecordReallocReturned(ADDRINT * addr, ADDRINT ret_ip)
 {
 	if(addr == 0)
 	{
@@ -22,39 +59,103 @@ VOID RecordMallocReturned(ADDRINT * addr)
 	}
 	if(((size_t)addr & (ADDRINT)0xfff00000) == (HEAP_BASE & (size_t)0xfff00000))
 	{
-		size_t size = 0;
-		PIN_SafeCopy(&size, addr-1, SIZE_SZ);
-		cerr << "malloc(" << last_malloc_size <<")\treturned "  << addr << " (" << (size & MALLOC_ALIGN_MASK ) << ")" << endl;
+		last_realloc.returned_value=(size_t)addr;
+		last_realloc.call_addr = ret_ip;
+		PIN_SafeCopy(&last_realloc.allocated_size, addr-1, SIZE_SZ);
+		cerr << "realloc(" << (void*)last_realloc.ptr << "," << last_realloc.requested_size << ")\treturned "  << addr << " (" << (last_realloc.allocated_size & MALLOC_ALIGN_MASK ) << ")" << endl;
 	}
 }
 
-VOID RecordMallocInvocation(size_t size)
+VOID RecordMallocReturned(ADDRINT * addr, ADDRINT ret_ip)
 {
-	last_malloc_size = size;
+	if(addr == 0)
+	{
+		cerr << "Heap full!";
+		return;
+	}
+	if(((size_t)addr & (ADDRINT)0xfff00000) == (HEAP_BASE & (size_t)0xfff00000))
+	{
+		last_malloc.returned_value=(size_t)addr;
+		last_malloc.call_addr = ret_ip;
+		PIN_SafeCopy(&last_malloc.allocated_size, addr-1, SIZE_SZ);
+		cerr << "malloc(" << last_malloc.requested_size <<")\treturned "  << addr << " (" << (last_malloc.allocated_size & MALLOC_ALIGN_MASK ) << ")" << endl;
+	}
+}
+
+VOID RecordCallocReturned(ADDRINT * addr, ADDRINT ret_ip)
+{
+	if(addr == 0)
+	{
+		cerr << "Heap full!";
+		return;
+	}
+	if(((size_t)addr & (ADDRINT)0xfff00000) == (HEAP_BASE & (size_t)0xfff00000))
+	{
+		last_calloc.returned_value=(size_t)addr;
+		last_calloc.call_addr = ret_ip;
+		PIN_SafeCopy(&last_calloc.allocated_size, addr-1, SIZE_SZ);
+		cerr << "calloc(" << last_calloc.num << "," << last_calloc.element_size << ")\treturned "  << addr << " (" << (last_calloc.allocated_size & MALLOC_ALIGN_MASK ) << ")" << endl;
+	}
+}
+
+VOID RecordMallocInvocation(size_t req_size)
+{
+	last_malloc.requested_size = req_size;
+}
+
+VOID RecordReallocInvocation(ADDRINT ptr, size_t req_size)
+{
+	last_realloc.requested_size = req_size;
+	last_realloc.ptr = ptr;
+}
+
+VOID RecordCallocInvocation(size_t num, size_t req_size) // After certain size calloc is not caught 0_o
+{
+	last_calloc.element_size = req_size;
+	last_calloc.num = num;
 }
 
 VOID RecordFreeInvocation(ADDRINT * addr)
 {
+	last_free.ptr=(size_t)addr;
 	cerr << "Freeing " << addr << endl;
 }
 
 VOID Image(IMG img, VOID *v)
 {
-	RTN mallocRtn = RTN_FindByName(img, "malloc");
-	if(mallocRtn.is_valid())
+	RTN rtn = RTN_FindByName(img, "malloc");
+	if(rtn.is_valid())
 	{
-		RTN_Open(mallocRtn);
-		RTN_InsertCall(mallocRtn, IPOINT_BEFORE, (AFUNPTR)RecordMallocInvocation, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
-		RTN_InsertCall(mallocRtn, IPOINT_AFTER, (AFUNPTR)RecordMallocReturned, IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
-		RTN_Close(mallocRtn);
+		RTN_Open(rtn);
+		RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)RecordMallocInvocation, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
+		RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)RecordMallocReturned, IARG_FUNCRET_EXITPOINT_VALUE, IARG_RETURN_IP, IARG_END);
+		RTN_Close(rtn);
 	}
 
-	RTN freeRtn = RTN_FindByName(img, "free");
-	if(freeRtn.is_valid())
+	rtn = RTN_FindByName(img, "free");
+	if(rtn.is_valid())
 	{
-		RTN_Open(freeRtn);
-		RTN_InsertCall(freeRtn, IPOINT_BEFORE, (AFUNPTR)RecordFreeInvocation, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
-		RTN_Close(freeRtn);
+		RTN_Open(rtn);
+		RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)RecordFreeInvocation, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
+		RTN_Close(rtn);
+	}
+	
+	rtn = RTN_FindByName(img, "realloc");
+	if(rtn.is_valid())
+	{
+		RTN_Open(rtn);
+		RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)RecordReallocInvocation, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
+		RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)RecordReallocReturned, IARG_FUNCRET_EXITPOINT_VALUE, IARG_RETURN_IP, IARG_END);
+		RTN_Close(rtn);
+	}
+
+	rtn = RTN_FindByName(img, "calloc");
+	if(rtn.is_valid())
+	{
+		RTN_Open(rtn);
+		RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)RecordCallocInvocation, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
+		RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)RecordCallocReturned, IARG_FUNCRET_EXITPOINT_VALUE, IARG_RETURN_IP, IARG_END);
+		RTN_Close(rtn);
 	}
 }
 
