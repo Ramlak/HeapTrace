@@ -30,17 +30,31 @@ class BlockingFIFOReader(QObject):
         # See http://www.outflux.net/blog/archives/2008/03/09/using-select-on-a-fifo/
         # We also use os.open and os.fdopen rather than built-in open so we can
         # add O_NONBLOCK.
-        print(self.filename)
-        self.fifo = open(self.filename, "r")
+        self.buffer = ""
+        self.fifo = os.fdopen(os.open(self.filename, os.O_RDWR | os.O_NONBLOCK), 'r')
         while True:
             ready_r, ready_w, ready_e = select([self.fifo], [], [], 1)
             if ready_r:
-                lines = self.fifo.readlines()
+                lines = self.readPipeLines()
                 for line in lines:
                     self.got_line.emit(line.rstrip())
             if QThread.currentThread().isInterruptionRequested():
                 self.finished.emit()
                 return
+
+    def readPipeLines(self):
+        lines = []
+        while True:
+            try:
+                self.buffer += self.fifo.read(1)
+                if self.buffer.endswith("\n"):
+                    lines.append(self.buffer.rstrip())
+                    self.buffer = ""
+            except IOError as e:
+                if e.errno == 11:
+                    return lines
+                else:
+                    raise e
 
 
 class PopenAndCall(QObject):
@@ -52,11 +66,11 @@ class PopenAndCall(QObject):
         self.kwargs = kwargs
         super(PopenAndCall, self).__init__()
 
-    def start(self):
+    def start(self, mainWindow):
+        self.window = mainWindow
         threading.Thread(target=self.runInThread, args=[]).start()
 
     def runInThread(self):
         proc = subprocess.Popen(*self.args, **self.kwargs)
         proc.wait()
         self.finished.emit()
-    # returns immediately after the thread starts
