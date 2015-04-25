@@ -8,6 +8,7 @@ int main()
 	{
 		scanf("%d", &x);
 		void * p = malloc(x);
+		printf("%p\n", p);
 		free(p);
 	}
 	while(x);
