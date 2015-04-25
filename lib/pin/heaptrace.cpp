@@ -2,6 +2,15 @@
 #include <malloc.h>
 #include <unistd.h>
 #include <iostream>
+#include <fstream>
+
+// Command line arguments
+
+KNOB<string> PipeName(KNOB_MODE_WRITEONCE, "pintool", "o", "/tmp/example_pipe", "specify pipe name");
+
+// Pipe file
+
+ofstream PipeFile;
 
 // Constants for heap handling
 
@@ -50,19 +59,25 @@ struct free_call last_free;
 
 size_t HEAP_BASE = 0;
 
+bool InHeap(ADDRINT addr)
+{
+	ADDRINT compare = HEAP_BASE & (ADDRINT)0xfff00000;
+	return (addr & (ADDRINT)0xfff00000) == compare;
+}
+
 VOID RecordReallocReturned(ADDRINT * addr, ADDRINT ret_ip)
 {
 	if(addr == 0)
 	{
-		cerr << "Heap full!";
+		PipeFile<< "Heap full!" << endl;
 		return;
 	}
-	if(((size_t)addr & (ADDRINT)0xfff00000) == (HEAP_BASE & (size_t)0xfff00000))
+	if(InHeap((ADDRINT)addr))
 	{
 		last_realloc.returned_value=(size_t)addr;
 		last_realloc.call_addr = ret_ip;
 		PIN_SafeCopy(&last_realloc.allocated_size, addr-1, SIZE_SZ);
-		cerr << "realloc(" << (void*)last_realloc.ptr << "," << last_realloc.requested_size << ")\treturned "  << addr << " (" << (last_realloc.allocated_size & MALLOC_ALIGN_MASK ) << ")" << endl;
+		PipeFile<< "realloc(" << (void*)last_realloc.ptr << "," << last_realloc.requested_size << ")\treturned "  << addr << " (" << (last_realloc.allocated_size & MALLOC_ALIGN_MASK ) << ")" << endl;
 	}
 }
 
@@ -70,15 +85,14 @@ VOID RecordMallocReturned(ADDRINT * addr, ADDRINT ret_ip)
 {
 	if(addr == 0)
 	{
-		cerr << "Heap full!";
+		PipeFile<< "Heap full!" << endl;
 		return;
 	}
-	if(((size_t)addr & (ADDRINT)0xfff00000) == (HEAP_BASE & (size_t)0xfff00000))
-	{
+	if(InHeap((ADDRINT)addr))	{
 		last_malloc.returned_value=(size_t)addr;
 		last_malloc.call_addr = ret_ip;
 		PIN_SafeCopy(&last_malloc.allocated_size, addr-1, SIZE_SZ);
-		cerr << "malloc(" << last_malloc.requested_size <<")\treturned "  << addr << " (" << (last_malloc.allocated_size & MALLOC_ALIGN_MASK ) << ")" << endl;
+		PipeFile<< "malloc(" << last_malloc.requested_size <<")\treturned "  << addr << " (" << (last_malloc.allocated_size & MALLOC_ALIGN_MASK ) << ")" << endl;
 	}
 }
 
@@ -86,15 +100,15 @@ VOID RecordCallocReturned(ADDRINT * addr, ADDRINT ret_ip)
 {
 	if(addr == 0)
 	{
-		cerr << "Heap full!";
+		PipeFile<< "Heap full!" << endl;
 		return;
 	}
-	if(((size_t)addr & (ADDRINT)0xfff00000) == (HEAP_BASE & (size_t)0xfff00000))
+	if(InHeap((ADDRINT)addr))
 	{
 		last_calloc.returned_value=(size_t)addr;
 		last_calloc.call_addr = ret_ip;
 		PIN_SafeCopy(&last_calloc.allocated_size, addr-1, SIZE_SZ);
-		cerr << "calloc(" << last_calloc.num << "," << last_calloc.element_size << ")\treturned "  << addr << " (" << (last_calloc.allocated_size & MALLOC_ALIGN_MASK ) << ")" << endl;
+		PipeFile<< "calloc(" << last_calloc.num << "," << last_calloc.element_size << ")\treturned "  << addr << " (" << (last_calloc.allocated_size & MALLOC_ALIGN_MASK ) << ")" << endl;
 	}
 }
 
@@ -117,8 +131,11 @@ VOID RecordCallocInvocation(size_t num, size_t req_size) // After certain size c
 
 VOID RecordFreeInvocation(ADDRINT * addr)
 {
-	last_free.ptr=(size_t)addr;
-	cerr << "Freeing " << addr << endl;
+	if(InHeap((ADDRINT)addr))
+	{
+		last_free.ptr=(size_t)addr;
+		PipeFile<< "Freeing " << addr << endl;
+	}
 }
 
 VOID Image(IMG img, VOID *v)
@@ -165,7 +182,7 @@ int main(int argc, char **argv)
 	PIN_InitSymbols();
 	IMG_AddInstrumentFunction(Image, NULL);
 	HEAP_BASE = (size_t)sbrk(0);
-	cerr << endl;
+	PipeFile.open(PipeName.Value().c_str());
 	PIN_StartProgram();
 	return 0;
 }
