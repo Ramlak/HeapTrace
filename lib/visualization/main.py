@@ -2,11 +2,13 @@ from __future__ import print_function
 __author__ = 'kalmar'
 
 import os
-
-from PyQt5.QtWidgets import QMainWindow, QApplication, QDesktopWidget, qApp, QFileDialog
-from PyQt5.QtCore import QProcess, QThread
+import json
+from PyQt5.QtWidgets import QMainWindow, QApplication, QDesktopWidget, qApp, QInputDialog, QDialog
+from PyQt5.QtCore import QThread
 from ui.mainUI import Ui_MainWindow
+from utils.windows import ConfigureWindow
 from utils.misc import randoms, BlockingFIFOReader, PopenAndCall
+from settings import settings, CONFIG_PATH
 
 
 class HeapTrace(object):
@@ -22,25 +24,24 @@ class HeapTrace(object):
         self.mainWindow = mainWindow
         self.mainWindow.textLog.clear()
         os.mkfifo(self.fifopath)
-
         self.reader = BlockingFIFOReader(self.fifopath)
         self.thread = QThread()
         self.reader.moveToThread(self.thread)
-
         self.reader.got_line.connect(self.newTraceLine)
         self.thread.started.connect(self.reader.read_fifo)
         self.reader.finished.connect(self.on_reader_finished)
         self.thread.finished.connect(self.on_thread_finished)
-
-        self.proc = PopenAndCall(" ".join(["/usr/bin/pin", "-t", "../pin/obj-intel64/heaptrace.so", "-o", self.fifopath, "--", self.filepath]), shell=True)
+        path = " ".join(["/usr/bin/pin", "-t", "../pin/obj-intel64/heaptrace.so", "-o", self.fifopath, "--", self.filepath])
+        path = settings.terminal_command.replace('[CMD]', path)
+        self.proc = PopenAndCall(path, shell=True)
         self.proc.finished.connect(self.on_proc_finished)
-        self.proc.start()
-
+        self.proc.start(self.mainWindow)
         self.thread.start()
 
     def newTraceLine(self, line):
         self.log.append(line)
         self.mainWindow.textLog.append(line + "\n")
+        return line
 
     def on_proc_finished(self):
         self.mainWindow.status("Process finished")
@@ -77,9 +78,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def connectEvents(self):
         self.actionExit.triggered.connect(qApp.quit)
         self.actionLive.triggered.connect(self.traceFromExecutable)
+        self.actionConfigure.triggered.connect(self.showConfigurationDialog)
+
+    def showConfigurationDialog(self):
+        window = ConfigureWindow(self)
+        window.show()
 
     def traceFromExecutable(self):
-        self.currentTrace = HeapTrace(QFileDialog.getOpenFileName(self, 'Open file', os.environ['TMPDIR']))
+        path = QInputDialog.getText(self, u'Input', u"Command to run")
+        if path[0] == "":
+            return
+        if not path[1]:
+            return
+        self.currentTrace = HeapTrace(path)
         self.currentTrace.run(self)
         self.status("Starting {}".format(self.currentTrace.filepath))
 
@@ -94,6 +105,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
 if __name__ == "__main__":
     import sys
+    if os.path.exists(CONFIG_PATH):
+        settings.updateFromFile()
+    else:
+        settings.saveToFile()
     app = QApplication(sys.argv)
     myapp = MainWindow()
     myapp.show()
