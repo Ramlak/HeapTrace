@@ -134,7 +134,7 @@ VOID RecordFreeInvocation(ADDRINT * addr)
 	if(InHeap((ADDRINT)addr))
 	{
 		last_free.ptr=(size_t)addr;
-		PipeFile<< "Freeing " << addr << endl;
+		PipeFile<< "free " << addr << endl;
 	}
 }
 
