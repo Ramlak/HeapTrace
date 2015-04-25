@@ -40,11 +40,10 @@ class HeapTrace(object):
 
     def newTraceLine(self, line):
         self.log.append(line)
-        self.mainWindow.textLog.append(line + "\n")
-        return line
+        self.mainWindow.textLog.append(line)
 
     def on_proc_finished(self):
-        self.mainWindow.status("Process finished")
+        self.mainWindow.status("Process finished ({} lines)".format(len(self.log)))
         self.thread.requestInterruption()
         try:
             os.remove(self.fifopath)
