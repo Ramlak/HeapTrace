@@ -1,3 +1,5 @@
+import shlex
+
 __author__ = 'kalmar'
 
 import string
@@ -5,21 +7,26 @@ import random
 import os
 import subprocess
 import threading
-from settings import settings
+from settings import settings, ROOT_DIR
 from PyQt5.QtCore import QObject, pyqtSignal, QThread, QProcess
 from select import select
 
 
-def getcmd():
-    cmd = ""
-    cmd += "cd {};".format(os.path.realpath(settings.get('new trace', 'START_DIR')))
-    print settings.get('new trace', 'USE_TCP_WRAPPER')
-    if settings.get('new trace', 'USE_TCP_WRAPPER') != 'False':
-        cmd += settings.get('main', 'TCP_WRAPPER_COMMAND').replace('[CMD]', os.path.realpath(settings.get('new trace', 'COMMAND'))).replace('[PORT]', settings.get('new trace', 'TCP_WRAPPER_PORT'))
+def getcmd(fifopath):
+    final_cmd = ""
+    if int(settings.get('new trace', 'BITS')) == 32:
+        pin_cmd = "pin -t {} -o {} -- {}".format(os.path.join(ROOT_DIR, "lib/pin/obj-ia32/heaptrace.so"), fifopath, os.path.realpath(settings.get('new trace', 'COMMAND')))
+    elif int(settings.get('new trace', 'BITS')) == 64:
+        pin_cmd = "pin -t {} -o {} -- {}".format(os.path.join(ROOT_DIR, "lib/pin/obj-intel64/heaptrace.so"), fifopath, os.path.realpath(settings.get('new trace', 'COMMAND')))
     else:
-        cmd += settings.get('main', 'NEW_TERMINAL_COMMAND').replace('[CMD]', os.path.realpath(settings.get('new trace', 'COMMAND')))
+        raise Exception("WTF!?")
 
-    return cmd
+    if settings.get('new trace', 'USE_TCP_WRAPPER') != 'False':
+        final_cmd += settings.get('main', 'TCP_WRAPPER_COMMAND').replace('[CMD]', pin_cmd).replace('[PORT]', settings.get('new trace', 'TCP_WRAPPER_PORT'))
+    else:
+        final_cmd += settings.get('main', 'NEW_TERMINAL_COMMAND').replace('[CMD]', pin_cmd)
+
+    return shlex.split(final_cmd)
 
 
 def randoms(count, alphabet=string.lowercase):
@@ -84,8 +91,10 @@ class PopenAndCall(QObject):
         threading.Thread(target=self.runInThread, args=[]).start()
 
     def runInThread(self):
+        cwd = os.getcwd()
+        os.chdir(os.path.realpath(settings.get('new trace', 'START_DIR')))
         proc = subprocess.Popen(*self.args, **self.kwargs)
+        os.chdir(cwd)
         self.heaptrace.proc = proc
-        print proc
         proc.wait()
         self.finished.emit()

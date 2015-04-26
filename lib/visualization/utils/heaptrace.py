@@ -25,12 +25,11 @@ class HeapTrace(object):
         self.thread.started.connect(self.reader.read_fifo)
         self.reader.finished.connect(self.on_reader_finished)
         self.thread.finished.connect(self.on_thread_finished)
-        path = getcmd()
+        path = getcmd(self.fifopath)
         print(path)
-        invocation = PopenAndCall(getcmd(), shell=True)
+        invocation = PopenAndCall(getcmd(self.fifopath), shell=False)
         invocation.finished.connect(self.on_proc_finished)
-        invocation.start(self.mainWindow)
-        print(self.proc)
+        invocation.start(self)
         self.thread.start()
 
     def kill(self):
@@ -44,6 +43,7 @@ class HeapTrace(object):
         self.mainWindow.textLog.append(line)
 
     def on_proc_finished(self):
+        self.proc = None
         self.mainWindow.status("Process finished ({} lines)".format(len(self.log)))
         self.thread.requestInterruption()
         try:
@@ -52,8 +52,7 @@ class HeapTrace(object):
             pass
 
     def on_reader_finished(self):
-        self.proc.kill()
-        self.thread.quit()
+        self.kill()
         self.reader.fifo.close()
         self.reader.deleteLater()
         try:
@@ -63,3 +62,4 @@ class HeapTrace(object):
 
     def on_thread_finished(self):
         self.thread.deleteLater()
+        self.thread = None

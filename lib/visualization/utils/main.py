@@ -1,4 +1,3 @@
-from __future__ import print_function
 from utils.heaptrace import HeapTrace
 
 __author__ = 'kalmar'
