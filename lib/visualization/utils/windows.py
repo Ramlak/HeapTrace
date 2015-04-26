@@ -1,7 +1,7 @@
 import os
 
 __author__ = 'kalmar'
-from PyQt5.QtWidgets import QDialog
+from PyQt5.QtWidgets import QDialog, QFileDialog
 from ui.configureUI import Ui_dialogConfigure
 from ui.newtraceUI import Ui_dialogNewTrace
 from settings import settings
@@ -11,7 +11,6 @@ class ConfigureWindow(QDialog, Ui_dialogConfigure):
     def __init__(self, parent=None):
         super(ConfigureWindow, self).__init__(parent)
         self.initUi()
-        self.connectEvents()
 
     def accept(self):
         settings.set('main', 'NEW_TERMINAL_COMMAND', self.textTerminalCmd.text())
@@ -23,6 +22,7 @@ class ConfigureWindow(QDialog, Ui_dialogConfigure):
 
     def initUi(self):
         self.setupUi(self)
+        self.connectEvents()
         self.textTerminalCmd.insert(settings.get('main', 'NEW_TERMINAL_COMMAND'))
         self.textTCPWrapper.insert(settings.get('main', 'TCP_WRAPPER_COMMAND'))
 
@@ -34,21 +34,51 @@ class NewTraceWindow(QDialog, Ui_dialogNewTrace):
     def __init__(self, parent):
         super(NewTraceWindow, self).__init__(parent)
         self.initUi()
-        self.connectEvents()
 
     def initUi(self):
         self.setupUi(self)
+        self.connectEvents()
         self.textExecutable.insert(settings.get('new trace', 'EXECUTABLE'))
         self.textArguments.insert(settings.get('new trace', 'ARGUMENTS_TEXT'))
         self.textArgumentsFile.insert(settings.get('new trace', 'ARGUMENTS_FILE'))
         self.textStartDirectory.insert(os.path.realpath(settings.get('new trace', 'START_DIR')))
         if settings.get('new trace', 'ARGUMENTS_USE_FILE') != 'False':
             self.checkBoxTakeArgumentsFromFile.click()
+        else:
+            self.checkBoxTakeArgumentsFromFile.click()
+            self.checkBoxTakeArgumentsFromFile.click()
 
     def connectEvents(self):
         self.buttonNewTraceCancel.clicked.connect(self.reject)
         self.buttonRunTrace.clicked.connect(self.run)
         self.buttonSaveTraceSettings.clicked.connect(self.save)
+        self.checkBoxTakeArgumentsFromFile.clicked.connect(self.checkBoxGetArgumentsFromFileClicked)
+        self.buttonGetExecutableFile.clicked.connect(self.buttonGetExecutableFileClicked)
+        self.buttonGetStartDirectory.clicked.connect(self.buttonGetStartDirectoryClicked)
+
+    def buttonGetExecutableFileClicked(self):
+        dialog = QFileDialog()
+        dialog.setDirectory(self.textStartDirectory.text())
+        path = dialog.getOpenFileName()
+        if path[1]:
+            self.textExecutable.setText(os.path.realpath(path[0]))
+
+    def buttonGetStartDirectoryClicked(self):
+        dialog = QFileDialog()
+        dialog.setDirectory(self.textStartDirectory.text())
+        path = dialog.getExistingDirectory()
+        if path:
+            self.textStartDirectory.setText(os.path.realpath(path))
+
+    def checkBoxGetArgumentsFromFileClicked(self):
+        if self.checkBoxTakeArgumentsFromFile.isChecked():
+            self.textArguments.setDisabled(True)
+            self.buttonGetArgumentsFile.setDisabled(False)
+            self.textArgumentsFile.setDisabled(False)
+        else:
+            self.textArguments.setDisabled(False)
+            self.buttonGetArgumentsFile.setDisabled(True)
+            self.textArgumentsFile.setDisabled(True)
 
     def save(self):
         settings.set('new trace', 'EXECUTABLE', self.textExecutable.text())
