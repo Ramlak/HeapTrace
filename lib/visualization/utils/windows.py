@@ -1,6 +1,6 @@
 __author__ = 'kalmar'
 from PyQt5.QtWidgets import QDialog
-from ui.configure import Ui_dialogConfigure
+from ui.configureUI import Ui_dialogConfigure
 from settings import settings
 
 
