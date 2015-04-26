@@ -107,5 +107,6 @@ class Ui_MainWindow(object):
         self.actionSave.setShortcut(_translate("MainWindow", "Ctrl+S"))
         self.actionConfigure.setText(_translate("MainWindow", "Configuration"))
         self.actionKill.setText(_translate("MainWindow", "Kill"))
+        self.actionKill.setShortcut(_translate("MainWindow", "Ctrl+C"))
         self.actionHeap_operations.setText(_translate("MainWindow", "Heap operations"))
 
