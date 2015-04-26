@@ -12,6 +12,7 @@ class ConfigureWindow(QDialog, Ui_dialogConfigure):
 
     def accept(self):
         settings.set('main', 'NEW_TERMINAL_COMMAND', self.textTerminalCmd.text())
+        settings.set('main', 'TCP_WRAPPER_COMMAND', self.textTCPWrapper.text())
         super(ConfigureWindow, self).accept()
 
     def reject(self):
@@ -20,6 +21,7 @@ class ConfigureWindow(QDialog, Ui_dialogConfigure):
     def initUi(self):
         self.setupUi(self)
         self.textTerminalCmd.insert(settings.get('main', 'NEW_TERMINAL_COMMAND'))
+        self.textTCPWrapper.insert(settings.get('main', 'TCP_WRAPPER_COMMAND'))
 
     def connectEvents(self):
         return
