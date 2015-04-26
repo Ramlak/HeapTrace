@@ -15,9 +15,9 @@ from select import select
 def getcmd(fifopath):
     final_cmd = ""
     if int(settings.get('new trace', 'BITS')) == 32:
-        pin_cmd = "pin -t {} -o {} -- {}".format(os.path.join(ROOT_DIR, "lib/pin/obj-ia32/heaptrace.so"), fifopath, os.path.realpath(settings.get('new trace', 'COMMAND')))
+        pin_cmd = "pin -t {} -o {} -- {}".format(os.path.join(ROOT_DIR, "lib/pin/obj-ia32/heaptrace.so"), fifopath, settings.get('new trace', 'EXECUTABLE'))
     elif int(settings.get('new trace', 'BITS')) == 64:
-        pin_cmd = "pin -t {} -o {} -- {}".format(os.path.join(ROOT_DIR, "lib/pin/obj-intel64/heaptrace.so"), fifopath, os.path.realpath(settings.get('new trace', 'COMMAND')))
+        pin_cmd = "pin -t {} -o {} -- {}".format(os.path.join(ROOT_DIR, "lib/pin/obj-intel64/heaptrace.so"), fifopath, settings.get('new trace', 'EXECUTABLE'))
     else:
         raise Exception("WTF!?")
 
@@ -92,7 +92,7 @@ class PopenAndCall(QObject):
 
     def runInThread(self):
         cwd = os.getcwd()
-        os.chdir(os.path.realpath(settings.get('new trace', 'START_DIR')))
+        os.chdir(settings.get('new trace', 'START_DIR'))
         proc = subprocess.Popen(*self.args, **self.kwargs)
         os.chdir(cwd)
         self.heaptrace.proc = proc
