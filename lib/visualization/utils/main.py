@@ -14,11 +14,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         QMainWindow.__init__(self, parent)
         self.initUi()
         self.connectEvents()
+        self.currentTrace = None
 
     def initUi(self):
         self.setupUi(self)
         self.status(u"Ready")
-        self.center()
         frame = self.frameGeometry()
         frame.moveCenter(QDesktopWidget().availableGeometry().center())
         self.move(frame.topLeft())
@@ -27,6 +27,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionExit.triggered.connect(qApp.quit)
         self.actionLive.triggered.connect(self.traceFromExecutable)
         self.actionConfigure.triggered.connect(self.showConfigurationDialog)
+        self.actionKill.triggered.connect(self.killCurrentTrace)
+
+    def killCurrentTrace(self):
+        if self.currentTrace:
+            self.currentTrace.kill()
 
     def showConfigurationDialog(self):
         window = ConfigureWindow(self)
@@ -46,7 +51,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.statusbar.showMessage(unicode(msg))
 
     def cleanup(self):
-        self.currentTrace.kill()
+        self.killCurrentTrace()
         settings.save()
 
 
