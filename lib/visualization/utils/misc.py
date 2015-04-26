@@ -14,7 +14,7 @@ def getcmd():
     cmd = ""
     cmd += "cd {};".format(os.path.realpath(settings.get('new trace', 'START_DIR')))
     print settings.get('new trace', 'USE_TCP_WRAPPER')
-    if settings.get('new trace', 'USE_TCP_WRAPPER') == 'False':
+    if settings.get('new trace', 'USE_TCP_WRAPPER') != 'False':
         cmd += settings.get('main', 'TCP_WRAPPER_COMMAND').replace('[CMD]', os.path.realpath(settings.get('new trace', 'COMMAND'))).replace('[PORT]', settings.get('new trace', 'TCP_WRAPPER_PORT'))
     else:
         cmd += settings.get('main', 'NEW_TERMINAL_COMMAND').replace('[CMD]', os.path.realpath(settings.get('new trace', 'COMMAND')))
@@ -80,10 +80,12 @@ class PopenAndCall(QObject):
         super(PopenAndCall, self).__init__()
 
     def start(self, heaptrace):
-        self.heaptrace. = heaptrace
+        self.heaptrace = heaptrace
         threading.Thread(target=self.runInThread, args=[]).start()
 
     def runInThread(self):
         proc = subprocess.Popen(*self.args, **self.kwargs)
+        self.heaptrace.proc = proc
+        print proc
         proc.wait()
         self.finished.emit()
