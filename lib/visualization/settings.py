@@ -4,6 +4,7 @@ from ConfigParser import SafeConfigParser
 import io
 
 CONFIG_PATH = os.path.join(os.environ['HOME'], ".htconfig")
+ROOT_DIR = "/home/kalmar/Projects/HeapTrace/HeapTrace"  # TODO: Create absolute path finder
 
 DEFAULT_SETTINGS = ("""
 [main]
@@ -22,7 +23,6 @@ class Settings(SafeConfigParser):
     def __init__(self, *args, **kwargs):
         SafeConfigParser.__init__(self, *args, **kwargs)
         self.load()
-        print "Created"
 
     def save(self):
         self.write(open(CONFIG_PATH, "w"))
