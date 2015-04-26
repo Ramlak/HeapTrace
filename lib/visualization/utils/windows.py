@@ -11,16 +11,15 @@ class ConfigureWindow(QDialog, Ui_dialogConfigure):
         self.connectEvents()
 
     def accept(self):
-        settings.terminal_command = self.textTerminalCmd.text()
-        settings.saveToFile()
-        super(ConfigureWindow, self).reject()
+        settings.set('main', 'NEW_TERMINAL_COMMAND', self.textTerminalCmd.text())
+        super(ConfigureWindow, self).accept()
 
     def reject(self):
         super(ConfigureWindow, self).reject()
 
     def initUi(self):
         self.setupUi(self)
-        self.textTerminalCmd.insert(settings.terminal_command)
+        self.textTerminalCmd.insert(settings.get('main', 'NEW_TERMINAL_COMMAND'))
 
     def connectEvents(self):
         return

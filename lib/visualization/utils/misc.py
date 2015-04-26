@@ -5,8 +5,21 @@ import random
 import os
 import subprocess
 import threading
+from settings import settings
 from PyQt5.QtCore import QObject, pyqtSignal, QThread, QProcess
 from select import select
+
+
+def getcmd():
+    cmd = ""
+    cmd += "cd {};".format(os.path.realpath(settings.get('new trace', 'START_DIR')))
+    print settings.get('new trace', 'USE_TCP_WRAPPER')
+    if settings.get('new trace', 'USE_TCP_WRAPPER') == 'False':
+        cmd += settings.get('main', 'TCP_WRAPPER_COMMAND').replace('[CMD]', os.path.realpath(settings.get('new trace', 'COMMAND'))).replace('[PORT]', settings.get('new trace', 'TCP_WRAPPER_PORT'))
+    else:
+        cmd += settings.get('main', 'NEW_TERMINAL_COMMAND').replace('[CMD]', os.path.realpath(settings.get('new trace', 'COMMAND')))
+
+    return cmd
 
 
 def randoms(count, alphabet=string.lowercase):
@@ -66,8 +79,8 @@ class PopenAndCall(QObject):
         self.kwargs = kwargs
         super(PopenAndCall, self).__init__()
 
-    def start(self, mainWindow):
-        self.window = mainWindow
+    def start(self, heaptrace):
+        self.heaptrace. = heaptrace
         threading.Thread(target=self.runInThread, args=[]).start()
 
     def runInThread(self):
