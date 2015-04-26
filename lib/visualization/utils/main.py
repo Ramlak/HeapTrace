@@ -4,7 +4,7 @@ __author__ = 'kalmar'
 
 from PyQt5.QtWidgets import QMainWindow, QApplication, QDesktopWidget, qApp, QInputDialog, QDialog
 from ui.mainUI import Ui_MainWindow
-from utils.windows import ConfigureWindow
+from utils.windows import ConfigureWindow, NewTraceWindow
 from settings import settings
 
 
@@ -24,7 +24,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def connectEvents(self):
         self.actionExit.triggered.connect(qApp.quit)
-        self.actionLive.triggered.connect(self.traceFromExecutable)
+        self.actionLive.triggered.connect(self.showNewTraceDialog)
         self.actionConfigure.triggered.connect(self.showConfigurationDialog)
         self.actionKill.triggered.connect(self.killCurrentTrace)
 
@@ -33,18 +33,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.currentTrace.kill()
 
     def showConfigurationDialog(self):
-        window = ConfigureWindow(self)
-        window.show()
+        configureWindow = ConfigureWindow(self)
+        configureWindow.show()
+
+    def showNewTraceDialog(self):
+        newTraceWindow = NewTraceWindow(self)
+        newTraceWindow.show()
 
     def traceFromExecutable(self):
-        path = QInputDialog.getText(self, u'Input', u"Command to run")
-        if not path[0] or not path[1]:
+        if not settings.get('new trace', 'EXECUTABLE'):
+            self.status("[!] No executable provided")
             return
-
-        settings.set('new trace', 'COMMAND', path[0])
         self.currentTrace = HeapTrace(self)
         self.currentTrace.run()
-        self.status("Starting {}".format(settings.get('new trace', 'COMMAND')))
+        self.status("Starting {}".format(settings.get('new trace', 'EXECUTABLE')))
 
     def status(self, msg):
         self.statusbar.showMessage(unicode(msg))
