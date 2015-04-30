@@ -75,7 +75,9 @@ enum cmd_type_t
 	CTT_START_PROCESS	=	5,	//	start application
 	CTT_EXIT_PROCESS	=	6,	//	exit process
 	CTT_HEAP_INFO		=	7,	//	get heap info
-	CTT_END				=	8,	//	marks end of enum
+	CTT_CHECK_HEAP_OP	=	8,	// 	check for heap operations
+	CTT_GET_HEAP_OP		=	9,	//	get heap operations
+	CTT_END				=	10,	//	marks end of enum
 };
 
 struct idacmd_packet_t
