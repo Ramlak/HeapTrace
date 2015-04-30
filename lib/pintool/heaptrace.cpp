@@ -59,7 +59,7 @@ static int srv_socket, portno, cli_socket;
 // global variables
 heap_op_packet_t last_op;
 static const char *last_packet = "NONE";
-static int debug_tracer = 1;
+static int debug_tracer = 2;
 
 size_t HEAP_BASE = 0;
 
@@ -113,7 +113,23 @@ static bool init_socket(void)
   ssize_t ret = send(fd, buf, n, 0);
   check_network_error(ret, from_where);
   return ret;
-}*/
+}
+
+static bool send_packet(
+        const void *pkt,
+        size_t size,
+        void *answer,
+        size_t ans_size,
+        const char *from)
+{
+  ssize_t bytes = pin_send(cli_socket, pkt, size, from);
+  if ( bytes > -1 )
+  {
+    if ( answer != NULL )
+      bytes = pin_recv(cli_socket, answer, ans_size, from);
+  }
+  return bytes != -1;
+} */
 
 static ssize_t pin_recv(int fd, void *buf, size_t n, const char *from_where)
 {
@@ -332,6 +348,5 @@ int main(int argc, char **argv)
 	HEAP_BASE = (size_t)sbrk(0);
 	if ( !listen_to_ida() )
 	    PIN_ExitApplication(-1);
-	//PIN_StartProgram();
 	return 0;
 }
