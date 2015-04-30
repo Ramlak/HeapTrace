@@ -1,63 +1,209 @@
-#include "pin.H"
-#include <malloc.h>
-#include <unistd.h>
-#include <iostream>
-#include <fstream>
+/*
+	PIN tool to trace heap behaviour.
 
+*/
+
+#include "heaptrace.h"
+
+//--------------------------------------------------------------------------
+// forward declarations
+static bool handle_packet(idapin_packet_t *res);
+static ssize_t pin_recv(PIN_SOCKET fd, void *buf, size_t n, const char *from_where);
+static ssize_t pin_send(PIN_SOCKET fd, const void *buf, size_t n, const char *from_where);
+static bool handle_packets(int total, const string &until_packet = "");
+static void check_network_error(ssize_t ret, const char *from_where);
+
+//--------------------------------------------------------------------------
+// macros
+#define MSG(fmt, ...)                                     \
+  do                                                      \
+  {                                                       \
+    if ( debug_tracer > 0 )                               \
+    {                                                     \
+      char buf[1024];                                     \
+      pin_snprintf(buf, sizeof(buf), fmt, ##__VA_ARGS__); \
+      fprintf(stderr, "%s", buf);                         \
+      LOG(buf);                                           \
+    }                                                     \
+  }                                                       \
+  while ( 0 )
+
+#define DEBUG(fmt, ...)                                   \
+  do                                                      \
+  {                                                       \
+    if ( debug_tracer > 1 )                               \
+      MSG(fmt, ##__VA_ARGS__);                            \
+  }                                                       \
+  while ( 0 )
+
+inline static void error_msg(const char *msg)
+{
+  MSG("%s: %s\n", msg, strerror(errno));
+}
+
+
+//--------------------------------------------------------------------------
 // Command line arguments
 
-KNOB<string> PipeName(KNOB_MODE_WRITEONCE, "pintool", "o", "/tmp/example_pipe", "specify pipe name");
+KNOB<int> IdaPort(KNOB_MODE_WRITEONCE, "pintool", "p", "12345", "Port where IDA Pro connects to PIN");
 
-// Pipe file
+//--------------------------------------------------------------------------
+// sockets
+static socket srv_socket, portno, cli_socket;
 
-ofstream PipeFile;
+//--------------------------------------------------------------------------
+// semaphores
+static PIN_SEMAPHORE listener_sem;
 
-// Constants for heap handling
+//--------------------------------------------------------------------------
+// constants for heap handling
+static size_t SIZE_SZ = sizeof(size_t);
+static size_t MALLOC_ALIGN_MASK = ~(2 * SIZE_SZ - 1);
 
-size_t SIZE_SZ = sizeof(size_t);
-size_t MALLOC_ALIGN_MASK = ~(2 * SIZE_SZ - 1);
-
-// Some global variables
-
-struct malloc_call
-{
-	size_t requested_size;
-	size_t allocated_size;
-	size_t returned_value;
-	size_t call_addr; // form now it's return address
-};
-
-struct realloc_call
-{
-	size_t ptr;
-	size_t requested_size;
-	size_t allocated_size;
-	size_t returned_value;
-	size_t call_addr;
-};
-
-struct free_call
-{
-	size_t ptr;
-	size_t returned_value;
-	size_t call_addr;
-};
-
-struct calloc_call
-{
-	size_t num;
-	size_t element_size;
-	size_t allocated_size;
-	size_t returned_value;
-	size_t call_addr;
-};
-
-struct malloc_call last_malloc;
-struct realloc_call last_realloc;
-struct calloc_call last_calloc;
-struct free_call last_free;
+//--------------------------------------------------------------------------
+// global variables
+heap_op_packet_t last_op;
 
 size_t HEAP_BASE = 0;
+
+//--------------------------------------------------------------------------
+// basic network functionality
+static bool init_socket(void)
+{
+	portno	= IdaPort;
+	srv_socket = socket(AF_INET, SOCK_STREAM, 0);
+	if ( srv_socket == (PIN_SOCKET)-1 )
+	{
+		error_msg("socket");
+		return false;
+	}
+
+	int optval = 1;
+	setsockopt(srv_socket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
+
+	struct sockaddr_in sa;
+	memset(&sa, '\0', sizeof(sa));
+	sa.sin_family = AF_INET;
+	sa.sin_port   = htons(portno);
+	if ( bind(srv_socket, (sockaddr *)&sa, sizeof(sa)) != 0 )
+	{
+		error_msg("bind");
+		return false;
+	}
+
+	if ( listen(srv_socket, 1) == 0 )
+	{
+	MSG("Listening at port %d...\n", (int)portno);
+
+	pin_socklen_t clilen = sizeof(sa);
+
+	cli_socket = accept(srv_socket, ((struct sockaddr *)&sa), &clilen);
+	if ( cli_socket > 0 )
+	  return true;
+	}
+	return false;
+}
+
+static ssize_t pin_send(socket fd, const void *buf, size_t n, const char *from_where)
+{
+  ssize_t ret = send(fd, buf, n, 0);
+  check_network_error(ret, from_where);
+  return ret;
+}
+
+static ssize_t pin_recv(PIN_SOCKET fd, void *buf, size_t n, const char *from_where)
+{
+  char *bufp = (char*)buf;
+  ssize_t total = 0;
+  while ( n > 0 )
+  {
+    ssize_t ret = recv(fd, bufp, n, 0);
+    check_network_error(ret, from_where);
+    if ( ret != - 1 )
+    {
+      n -= ret;
+      bufp += ret;
+      total += ret;
+    }
+    else
+    {
+      break;
+    }
+  }
+  return total;
+}
+
+static void check_network_error(ssize_t ret, const char *from_where)
+{
+  if ( ret == -1 )
+  {
+    int err = errno;
+    bool timeout = err == EAGAIN;
+
+    if ( !timeout )
+    {
+      MSG("A network error %d happened in %s, exiting from application...\n", err, from_where);
+      PIN_ExitProcess(-1);
+    }
+    MSG("Timeout, called from %s\n", from_where);
+  }
+}
+
+//--------------------------------------------------------------------------
+// conversation with ida functions
+static bool listen_to_ida(void)
+{
+  // initialize the socket and connect to ida
+  if ( !init_socket() )
+  {
+    MSG("listen_to_ida: init_socket() failed!\n");
+    return false;
+  }
+
+  MSG("CONNECTED TO IDA\n");
+
+  // Handle the 1st packets. Then, we will handle the next (variable
+  // number) of packets to add breakpoints in the application start
+  // callback and, finally, handle all the rest of packets send to the
+  // PIN tool in the handle_packet function
+  bool ret = handle_packets(5);
+  MSG("Exiting from listen_to_ida\n");
+
+  return ret;
+}
+
+static bool handle_packets(int total, const string &until_packet)
+{
+  int packets = 0;
+  while ( (total != -1 && packets++ < total) || (!until_packet.empty() && last_packet != until_packet) )
+  {
+    DEBUG("Receiving packet %d, expected %d bytes...\n", packets, (uint32)sizeof(idacmd_packet_t));
+    idacmd_packet_t res;
+    ssize_t bytes = pin_recv(cli_socket, &res, sizeof(res), __FUNCTION__);
+    if ( bytes != sizeof(res) )
+    {
+      error_msg("pin_recv");
+      return false;
+    }
+
+    DEBUG("Handling packet ... \n");
+    if ( !handle_packet(&res) )
+    {
+      MSG("Error handling %s packet, exiting...\n", last_packet);
+      return false;
+    }
+  }
+
+  if ( total == packets )
+    DEBUG("Maximum number of packets reached, exiting from handle_packets...\n");
+  else
+    DEBUG("Expected packet '%s' received, exiting from handle_packets...\n", until_packet.c_str());
+
+  return true;
+}
+
+//--------------------------------------------------------------------------
+// instrumentation functions
 
 bool InHeap(ADDRINT addr)
 {
@@ -65,79 +211,69 @@ bool InHeap(ADDRINT addr)
 	return (addr & (ADDRINT)0xfff00000) == compare;
 }
 
-VOID RecordReallocReturned(ADDRINT * addr, ADDRINT ret_ip)
+//--------------------------------------------------------------------------
+// realloc callbacks
+VOID RecordReallocInvocation(ADDRINT ptr, size_t requested_size)
 {
-	if(addr == 0)
-	{
-		PipeFile<< "Heap full!" << endl;
-		return;
-	}
-	if(InHeap((ADDRINT)addr))
-	{
-		last_realloc.returned_value=(size_t)addr;
-		last_realloc.call_addr = ret_ip;
-		PIN_SafeCopy(&last_realloc.allocated_size, addr-1, SIZE_SZ);
-		PipeFile<< "realloc(" << (void*)last_realloc.ptr << "," << last_realloc.requested_size << ")\treturned "  << addr << " (" << (last_realloc.allocated_size & MALLOC_ALIGN_MASK ) << ")" << endl;
-	}
+	last_op.id = HO_REALLOC;
+	last_op.args[0] = ptr;
+	last_op.args[1] = req_size;
 }
 
-VOID RecordMallocReturned(ADDRINT * addr, ADDRINT ret_ip)
+VOID RecordReallocReturned(ADDRINT * addr, ADDRINT return_ip)
 {
-	if(addr == 0)
-	{
-		PipeFile<< "Heap full!" << endl;
-		return;
-	}
-	if(InHeap((ADDRINT)addr))	{
-		last_malloc.returned_value=(size_t)addr;
-		last_malloc.call_addr = ret_ip;
-		PIN_SafeCopy(&last_malloc.allocated_size, addr-1, SIZE_SZ);
-		PipeFile<< "malloc(" << last_malloc.requested_size <<")\treturned "  << addr << " (" << (last_malloc.allocated_size & MALLOC_ALIGN_MASK ) << ")" << endl;
-	}
+	last_op.return_value=(ADDRINT)addr;
+	last_op.return_ip = return_ip;
+	PIN_SafeCopy(&last_op.chunk, addr-2, sizeof(malloc_chunk));
 }
 
-VOID RecordCallocReturned(ADDRINT * addr, ADDRINT ret_ip)
+//--------------------------------------------------------------------------
+// malloc callbacks
+VOID RecordMallocInvocation(size_t requested_size)
 {
-	if(addr == 0)
-	{
-		PipeFile<< "Heap full!" << endl;
-		return;
-	}
-	if(InHeap((ADDRINT)addr))
-	{
-		last_calloc.returned_value=(size_t)addr;
-		last_calloc.call_addr = ret_ip;
-		PIN_SafeCopy(&last_calloc.allocated_size, addr-1, SIZE_SZ);
-		PipeFile<< "calloc(" << last_calloc.num << "," << last_calloc.element_size << ")\treturned "  << addr << " (" << (last_calloc.allocated_size & MALLOC_ALIGN_MASK ) << ")" << endl;
-	}
+	last_op.id = HO_MALLOC;
+	last_op.args[0] = requested_size;
 }
 
-VOID RecordMallocInvocation(size_t req_size)
+VOID RecordMallocReturned(ADDRINT * addr, ADDRINT return_ip)
 {
-	last_malloc.requested_size = req_size;
+	last_op.return_value=(ADDRINT)addr;
+	last_op.return_ip = return_ip;
+	PIN_SafeCopy(&last_op.chunk, addr-2, sizeof(malloc_chunk));
 }
 
-VOID RecordReallocInvocation(ADDRINT ptr, size_t req_size)
+//--------------------------------------------------------------------------
+// calloc callbacks
+VOID RecordCallocInvocation(size_t num, size_t requested_size) // After certain size calloc is not caught 0_o
 {
-	last_realloc.requested_size = req_size;
-	last_realloc.ptr = ptr;
+	last_op.id = HO_CALLOC;
+	last_op.args[0] = num;
+	last_op.args[1] = req_size;
 }
 
-VOID RecordCallocInvocation(size_t num, size_t req_size) // After certain size calloc is not caught 0_o
+VOID RecordCallocReturned(ADDRINT * addr, ADDRINT return_ip)
 {
-	last_calloc.element_size = req_size;
-	last_calloc.num = num;
+	last_op.return_value=(ADDRINT)addr;
+	last_op.return_ip = return_ip;
+	PIN_SafeCopy(&last_op.chunk, addr-2, sizeof(malloc_chunk));
 }
 
-VOID RecordFreeInvocation(ADDRINT * addr)
+//--------------------------------------------------------------------------
+// free callbacks
+VOID RecordFreeInvocation(ADDRINT addr)
 {
-	if(InHeap((ADDRINT)addr))
-	{
-		last_free.ptr=(size_t)addr;
-		PipeFile<< "free " << addr << endl;
-	}
+	last_op.id = HO_FREE:
+	last_op.args[0] = addr;
 }
 
+VOID RecordFreeReturned(ADDRINT return_ip)
+{
+	last_op.return_value = 0;
+	last_op.return_ip = return_ip;
+}
+
+//--------------------------------------------------------------------------
+// image instrumentation
 VOID Image(IMG img, VOID *v)
 {
 	RTN rtn = RTN_FindByName(img, "malloc");
@@ -154,6 +290,7 @@ VOID Image(IMG img, VOID *v)
 	{
 		RTN_Open(rtn);
 		RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)RecordFreeInvocation, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
+		RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)RecordFreeReturned, IARG_RETURN_IP, IARG_END);
 		RTN_Close(rtn);
 	}
 	
@@ -176,13 +313,16 @@ VOID Image(IMG img, VOID *v)
 	}
 }
 
+//--------------------------------------------------------------------------
+// main
 int main(int argc, char **argv)
 {
 	PIN_Init(argc, argv);
 	PIN_InitSymbols();
 	IMG_AddInstrumentFunction(Image, NULL);
 	HEAP_BASE = (size_t)sbrk(0);
-	PipeFile.open(PipeName.Value().c_str());
-	PIN_StartProgram();
+	if ( !listen_to_ida() )
+	    PIN_ExitApplication(-1);
+	//PIN_StartProgram();
 	return 0;
 }
