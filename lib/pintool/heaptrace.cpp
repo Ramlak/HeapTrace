@@ -19,21 +19,21 @@ static VOID Image(IMG img, VOID *v);
 #define MSG(fmt, ...)                                     \
   do                                                      \
   {                                                       \
-    if ( debug_tracer > 0 )                               \
-    {                                                     \
-      char buf[1024];                                     \
-      snprintf(buf, sizeof(buf), fmt, ##__VA_ARGS__); 	  \
-      fprintf(stderr, "%s", buf);                         \
-      LOG(buf);                                           \
-    }                                                     \
+	if ( debug_tracer > 0 )                               \
+	{                                                     \
+	  char buf[1024];                                     \
+	  snprintf(buf, sizeof(buf), fmt, ##__VA_ARGS__); 	  \
+	  fprintf(stderr, "%s", buf);                         \
+	  LOG(buf);                                           \
+	}                                                     \
   }                                                       \
   while ( 0 )
 
 #define DEBUG(fmt, ...)                                   \
   do                                                      \
   {                                                       \
-    if ( debug_tracer > 1 )                               \
-      MSG(fmt, ##__VA_ARGS__);                            \
+	if ( debug_tracer > 1 )                               \
+	  MSG(fmt, ##__VA_ARGS__);                            \
   }                                                       \
   while ( 0 )
 
@@ -128,17 +128,17 @@ static ssize_t pin_send(int fd, const void *buf, size_t n, const char *from_wher
 }
 
 static bool send_packet(
-        const void *pkt,
-        size_t size,
-        void *answer,
-        size_t ans_size,
-        const char *from)
+		const void *pkt,
+		size_t size,
+		void *answer,
+		size_t ans_size,
+		const char *from)
 {
   ssize_t bytes = pin_send(cli_socket, pkt, size, from);
   if ( bytes > -1 )
   {
-    if ( answer != NULL )
-      bytes = pin_recv(cli_socket, answer, ans_size, from);
+	if ( answer != NULL )
+	  bytes = pin_recv(cli_socket, answer, ans_size, from);
   }
   return bytes != -1;
 } 
@@ -149,18 +149,18 @@ static ssize_t pin_recv(int fd, void *buf, size_t n, const char *from_where)
   ssize_t total = 0;
   while ( n > 0 )
   {
-    ssize_t ret = recv(fd, bufp, n, 0);
-    check_network_error(ret, from_where);
-    if ( ret != - 1 )
-    {
-      n -= ret;
-      bufp += ret;
-      total += ret;
-    }
-    else
-    {
-      break;
-    }
+	ssize_t ret = recv(fd, bufp, n, 0);
+	check_network_error(ret, from_where);
+	if ( ret != - 1 )
+	{
+	  n -= ret;
+	  bufp += ret;
+	  total += ret;
+	}
+	else
+	{
+	  break;
+	}
   }
   return total;
 }
@@ -169,15 +169,16 @@ static void check_network_error(ssize_t ret, const char *from_where)
 {
   if ( ret == -1 )
   {
-    int err = errno;
-    bool timeout = err == EAGAIN;
+  	MSG("Network error!\n");
+	int err = errno;
+	bool timeout = err == EAGAIN;
 
-    if ( !timeout )
-    {
-      MSG("A network error %d happened in %s, exiting from application...\n", err, from_where);
-      PIN_ExitProcess(-1);
-    }
-    MSG("Timeout, called from %s\n", from_where);
+	if ( !timeout )
+	{
+	  MSG("A network error %d happened in %s, exiting from application...\n", err, from_where);
+	  PIN_ExitProcess(-1);
+	}
+	MSG("Timeout, called from %s\n", from_where);
   }
 }
 
@@ -189,41 +190,39 @@ static VOID ida_listener(VOID *)
 
   while ( run_listener )
   {
-    DEBUG("Handling events in ida_listener\n");
-    idacmd_packet_t res;
-    ssize_t bytes = pin_recv(cli_socket, &res, sizeof(res), "ida_pin_listener");
-    if ( bytes == -1 )
-    {
-      error_msg("recv");
-      continue;
-    }
+	DEBUG("Handling events in ida_listener\n");
+	idacmd_packet_t res;
+	ssize_t bytes = pin_recv(cli_socket, &res, sizeof(res), "ida_pin_listener");
+	if ( bytes == -1 )
+	{
+	  error_msg("recv");
+	  continue;
+	}
 
-    if ( !handle_packet(&res) )
-    {
-      MSG("Error handling %s packet, exiting...\n", last_packet);
-      PIN_ExitThread(0);
-    }
+	if ( !handle_packet(&res) )
+	{
+	  MSG("Error handling %s packet, exiting...\n", last_packet);
+	  PIN_ExitThread(0);
+	}
 
-    if ( PIN_IsProcessExiting() && heap_ops.empty() && process_exit )
-    {
-      MSG("Process is exiting...\n");
-      break;
-    }
+	if ( PIN_IsProcessExiting() && heap_ops.empty() && process_exit )
+	{
+	  MSG("Process is exiting...\n");
+	  break;
+	}
   }
 }
 
 static VOID fini_cb(INT32, VOID *)
 {
-  DEBUG("Marking the trace as full\n");
-
   MSG("Waiting for listener thread to exit...\n");
   if ( PIN_WaitForThreadTermination(listener_uid, 10000, NULL) )
   {
-    MSG("Everything OK\n");
+	MSG("Everything OK\n");
   }
   else
   {
-    MSG("Timeout waiting for listener thread.\n");
+	MSG("Timeout waiting for listener thread.\n");
   }
 }
 
@@ -238,44 +237,55 @@ static VOID app_start_cb(VOID *)
 static void start_process(void)
 {
 	IMG_AddInstrumentFunction(Image, NULL);
-    
-    // initialize listener_semaphore
-    PIN_SemaphoreInit(&listener_sem);
-  	PIN_SemaphoreClear(&listener_sem);
+	
+	// initialize listener_semaphore
+	PIN_SemaphoreInit(&listener_sem);
+	PIN_SemaphoreClear(&listener_sem);
 
-  	PIN_InitLock(&heap_op_lock);
+	PIN_InitLock(&heap_op_lock);
 
 	// Register fini_cb to be called when the application exits
-  	PIN_AddFiniUnlockedFunction(fini_cb, 0);
+	PIN_AddFiniUnlockedFunction(fini_cb, 0);
 
-  	// Register aplication start callback
-  	PIN_AddApplicationStartFunction(app_start_cb, 0);
+	// Register aplication start callback
+	PIN_AddApplicationStartFunction(app_start_cb, 0);
 
-  	// Create thread for communication with IDA
+	// Create thread for communication with IDA
 	THREADID thread_id = PIN_SpawnInternalThread(ida_listener, NULL, 0, &listener_uid);
-  	if ( thread_id == INVALID_THREADID )
+	if ( thread_id == INVALID_THREADID )
 	{
-	    MSG("PIN_SpawnInternalThread(BufferProcessingThread) failed\n");
-	    exit(-1);
+		MSG("PIN_SpawnInternalThread(BufferProcessingThread) failed\n");
+		exit(-1);
 	}
 
 	// Start the program, never returns
-  	PIN_StartProgram();
+	PIN_StartProgram();
 }
 
 static bool read_memory(ADDRINT addr, size_t size)
 {
-	DEBUG("Reading %d bytes at address %p\n", size, (void*)addr);
+	DEBUG("Reading %lu bytes at address %p\n", (long unsigned int)size, (void*)addr);
 
-  	idamem_response_pkt_t pkt;
-  	// read the data asked by IDA
-  	size_t copy_size = size < sizeof(pkt.buf) ? size : sizeof(pkt.buf);
-  	ssize_t read_bytes = PIN_SafeCopy(pkt.buf, (void*)addr, copy_size);
-  	pkt.size = (uint32)read_bytes;
-  	pkt.code = CTT_READ_MEMORY;
+	idamem_response_pkt_t pkt;
+	// read the data asked by IDA
+	size_t copy_size = size < sizeof(pkt.buf) ? size : sizeof(pkt.buf);
+	ssize_t read_bytes = PIN_SafeCopy(pkt.buf, (void*)addr, copy_size);
+	pkt.size = (uint32)read_bytes;
+	pkt.code = CTT_READ_MEMORY;
 
-  	ssize_t bytes = pin_send(cli_socket, &pkt, sizeof(pkt), __FUNCTION__);
-  	return bytes == sizeof(pkt);
+	ssize_t bytes = pin_send(cli_socket, &pkt, sizeof(pkt), __FUNCTION__);
+	return bytes == sizeof(pkt);
+}
+
+inline static void pop_heap_op(heap_op_packet_t *pkt)
+{
+	assert(!heap_ops.empty());
+	{
+		PIN_GetLock(&heap_op_lock, PIN_GetTid());
+		*pkt = heap_ops.front();
+		heap_ops.pop_front();
+		PIN_ReleaseLock(&heap_op_lock);
+	}
 }
 
 //--------------------------------------------------------------------------
@@ -285,14 +295,14 @@ static bool listen_to_ida(void)
   // initialize the socket and connect to ida
   if ( !init_socket() )
   {
-    MSG("listen_to_ida: init_socket() failed!\n");
-    return false;
+	MSG("listen_to_ida: init_socket() failed!\n");
+	return false;
   }
 
   MSG("CONNECTED TO IDA\n");
   bool ret = handle_packets(3);
   MSG("Exiting from listen_to_ida\n");
-
+  exit(1);
   return ret;
 }
 
@@ -335,25 +345,48 @@ static bool handle_packet(idacmd_packet_t *res)
 			break;
 		case CTT_WRITE_MEMORY:
 			break;
-	    case CTT_EXIT_PROCESS:
-	     	MSG("Received EXIT PROCESS, exiting from process...\n");
-	      	run_listener = false;
-	      	// does not return
-	      	PIN_ExitProcess(0);
+		case CTT_ACK:
+			break;	
+		case CTT_EXIT_PROCESS:
+			MSG("Received EXIT PROCESS, exiting from process...\n");
+			run_listener = false;
+			// does not return
+			PIN_ExitProcess(0);
 		case CTT_CHECK_HEAP_OP:
 			ans.data = 0;
 			if(!heap_ops.empty() && process_started)
-			break;
+			{
+				DEBUG("Total of %d heap operations recorded\n", (uint32)heap_ops.size());
+				ans.size = (uint32)heap_ops.size();
+				ans.code = CTT_CHECK_HEAP_OP;
+			}
+			else
+			{
+				ans.size = 0;
+				ans.code = CTT_ACK;
+			}
+			ret = send_packet(&ans, sizeof(idacmd_packet_t), NULL, 0, __FUNCTION__);
+			break;	
 		case CTT_GET_HEAP_OP:
-			break;
+			{
+				heap_op_packet_t pkt;
+
+				if(!heap_ops.empty())
+					pop_heap_op(&pkt);
+				else
+					pkt.code = HO_IDLE;
+
+				ret = send_packet(&pkt, sizeof(pkt), NULL, 0, __FUNCTION__);
+				break;
+			}
 		default:
-	    	MSG("UNKNOWN PACKET RECEIVED WITH CODE %d\n", res->code);
-	      	last_packet = "UNKNOWN " + res->code;
-	      	PIN_ExitProcess(0);
-	      	break;
+			MSG("UNKNOWN PACKET RECEIVED WITH CODE %d\n", res->code);
+			last_packet = "UNKNOWN " + res->code;
+			PIN_ExitProcess(0);
+			break;
 	}
-  	DEBUG("LAST PACKET WAS %s\n", last_packet);
-  	return ret;
+	DEBUG("LAST PACKET WAS %s\n", last_packet);
+	return ret;
 }
 
 static bool handle_packets(int total, const string &until_packet)
@@ -361,27 +394,27 @@ static bool handle_packets(int total, const string &until_packet)
   int packets = 0;
   while ( (total != -1 && packets++ < total) || (!until_packet.empty() && last_packet != until_packet) )
   {
-    DEBUG("Receiving packet %d, expected %d bytes...\n", packets, (uint32)sizeof(idacmd_packet_t));
-    idacmd_packet_t res;
-    ssize_t bytes = pin_recv(cli_socket, &res, sizeof(res), __FUNCTION__);
-    if ( bytes != sizeof(res) )
-    {
-      error_msg("pin_recv");
-      return false;
-    }
+	DEBUG("Receiving packet %d, expected %d bytes...\n", packets, (uint32)sizeof(idacmd_packet_t));
+	idacmd_packet_t res;
+	ssize_t bytes = pin_recv(cli_socket, &res, sizeof(res), __FUNCTION__);
+	if ( bytes != sizeof(res) )
+	{
+	  error_msg("pin_recv");
+	  return false;
+	}
 
-    DEBUG("Handling packet ... \n");
-    if ( !handle_packet(&res) )
-    {
-      MSG("Error handling %s packet, exiting...\n", last_packet);
-      return false;
-    }
+	DEBUG("Handling packet ... \n");
+	if ( !handle_packet(&res) )
+	{
+	  MSG("Error handling %s packet, exiting...\n", last_packet);
+	  return false;
+	}
   }
 
   if ( total == packets )
-    DEBUG("Maximum number of packets reached, exiting from handle_packets...\n");
+	DEBUG("Maximum number of packets reached, exiting from handle_packets...\n");
   else
-    DEBUG("Expected packet '%s' received, exiting from handle_packets...\n", until_packet.c_str());
+	DEBUG("Expected packet '%s' received, exiting from handle_packets...\n", until_packet.c_str());
 
   return true;
 }
@@ -394,10 +427,17 @@ static bool handle_packets(int total, const string &until_packet)
 	return (addr & (ADDRINT)0xfff00000) == compare;
 }*/
 
+static const char *const operation_names[] =
+{
+  "IDLE", "MALLOC", "REALLOC", "CALLOC", "FREE",
+};
+
+
 static VOID add_last_heap_op()
 {
 	PIN_GetLock(&heap_op_lock, PIN_GetTid());
 	heap_ops.push_back(heap_operation);
+	DEBUG("Last operation on heap is %s\n", operation_names[heap_operation.code]);
 	PIN_ReleaseLock(&heap_op_lock);
 }
 
@@ -414,7 +454,6 @@ static VOID RecordReallocReturned(ADDRINT * addr, ADDRINT return_ip)
 {
 	heap_operation.return_value=(ADDRINT)addr;
 	heap_operation.return_ip = return_ip;
-	PIN_SafeCopy(&heap_operation.chunk, addr-2, sizeof(malloc_chunk));
 	add_last_heap_op();
 }
 
@@ -430,7 +469,6 @@ static VOID RecordMallocReturned(ADDRINT * addr, ADDRINT return_ip)
 {
 	heap_operation.return_value=(ADDRINT)addr;
 	heap_operation.return_ip = return_ip;
-	PIN_SafeCopy(&heap_operation.chunk, addr-2, sizeof(malloc_chunk));
 	add_last_heap_op();
 }
 
@@ -447,22 +485,16 @@ static VOID RecordCallocReturned(ADDRINT * addr, ADDRINT return_ip)
 {
 	heap_operation.return_value=(ADDRINT)addr;
 	heap_operation.return_ip = return_ip;
-	PIN_SafeCopy(&heap_operation.chunk, addr-2, sizeof(malloc_chunk));
 	add_last_heap_op();
 }
 
 //--------------------------------------------------------------------------
 // free callbacks
-static VOID RecordFreeInvocation(ADDRINT addr)
+static VOID RecordFreeInvocation(ADDRINT addr) // Free return isn't hooked for some reason (this is serious!)
 {
 	heap_operation.code = HO_FREE;
 	heap_operation.args[0] = addr;
-}
-
-static VOID RecordFreeReturned(ADDRINT return_ip)
-{
 	heap_operation.return_value = 0;
-	heap_operation.return_ip = return_ip;
 	add_last_heap_op();
 }
 
@@ -484,7 +516,6 @@ static VOID Image(IMG img, VOID *v)
 	{
 		RTN_Open(rtn);
 		RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)RecordFreeInvocation, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
-		RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)RecordFreeReturned, IARG_RETURN_IP, IARG_END);
 		RTN_Close(rtn);
 	}
 	
@@ -515,6 +546,6 @@ int main(int argc, char **argv)
 	PIN_InitSymbols();
 	HEAP_BASE = (size_t)sbrk(0);
 	if ( !listen_to_ida() )
-	    PIN_ExitApplication(-1);
+		PIN_ExitApplication(-1);
 	return 0;
 }
