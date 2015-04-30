@@ -28,6 +28,10 @@ using namespace std;
 typedef unsigned int uint32;
 typedef unsigned char uchar;
 
+#define BADADDR -1
+
+#pragma pack(push, 1)
+
 //--------------------------------------------------------------------------
 struct malloc_chunk
 {
@@ -61,10 +65,23 @@ struct heap_op_packet_t			//	standard packet registering heap operations
 };
 
 //--------------------------------------------------------------------------
+enum cmd_type_t
+{
+	CTT_ACK		=	0,	//	do nothing
+	CTT_ERROR	=	1,	//	signal an error
+	CTT_HELLO	=	2,	//	first packet
+	CTT_READ	=	3,	//	read 'size' bytes of memory from 'data'
+	CTT_WRITE	=	4,	//	write 'size' bytes to 'data'
+	CTT_START	=	5,	//	start application
+	CTT_EXIT	=	6,	//	exit process
+};
 
 struct idacmd_packet_t
 {
-
+	cmd_type_t code;
+	size_t size;
+	ADDRINT data;
+	idacmd_packet_t(): code(CTT_ACK), size(0), data(BADADDR){};
 };
 
 #endif
