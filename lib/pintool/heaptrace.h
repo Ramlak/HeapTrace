@@ -46,11 +46,11 @@ struct malloc_chunk
 //--------------------------------------------------------------------------
 enum heap_op_type_t
 {
-	HO_IDLE		=	0x00000000, //	nothing (should not be sent normally)
-	HO_MALLOC	=	0x00000001,	//	malloc
-	HO_REALLOC	=	0x00000002, //	realloc
-	HO_CALLOC	=	0x00000004,	//	calloc
-	HO_FREE		=	0x00000008,	//	free
+	HO_IDLE		=	0, //	nothing (should not be sent normally)
+	HO_MALLOC	=	1,	//	malloc
+	HO_REALLOC	=	2, //	realloc
+	HO_CALLOC	=	3,	//	calloc
+	HO_FREE		=	4,	//	free
 };
 
 struct heap_op_packet_t			//	standard packet registering heap operations 
