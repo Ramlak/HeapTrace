@@ -47,8 +47,9 @@ KNOB<int> IdaPort(KNOB_MODE_WRITEONCE, "pintool", "p", "12345", "Port where IDA 
 static int srv_socket, portno, cli_socket;
 
 //--------------------------------------------------------------------------
-// semaphores
-//static PIN_SEMAPHORE listener_sem;
+// thread related stuff
+static PIN_SEMAPHORE listener_sem;
+static PIN_THREAD_UID listener_uid;
 
 //--------------------------------------------------------------------------
 // constants for heap handling
@@ -57,10 +58,10 @@ static int srv_socket, portno, cli_socket;
 
 //--------------------------------------------------------------------------
 // global variables
-heap_op_packet_t last_op;
+heap_op_packet_t heap_operation;
 static const char *last_packet = "NONE";
 static int debug_tracer = 2;
-
+static bool run_listener = false;
 size_t HEAP_BASE = 0;
 
 //--------------------------------------------------------------------------
@@ -181,20 +182,47 @@ static bool listen_to_ida(void)
   }
 
   MSG("CONNECTED TO IDA\n");
-
-  // Handle the 1st packets. Then, we will handle the next (variable
-  // number) of packets to add breakpoints in the application start
-  // callback and, finally, handle all the rest of packets send to the
-  // PIN tool in the handle_packet function
-  bool ret = handle_packets(5);
+  bool ret = handle_packets(3);
   MSG("Exiting from listen_to_ida\n");
 
   return ret;
 }
 
+static const char *const packet_names[] =
+{
+  "ACK",           "ERROR",       "HELLO",       "READ MEMORY",
+  "WRITE MEMORY",	"START PROCESS",	"EXIT PROCESS", "HEAP INFO", 
+};
+
 static bool handle_packet(idacmd_packet_t *res)
 {
-	return true;
+	bool ret = false;
+	idacmd_packet_t ans;
+	ans.size = 0;
+	ans.code = CTT_ERROR;
+
+	if ( res->code > CTT_END )
+	{
+		MSG("Unknown packet type %d, exiting...\n", res->code);
+		PIN_ExitProcess(0);
+	}
+	last_packet = packet_names[res->code];
+	switch ( res->code )
+	{
+		case CTT_HELLO:
+			ans.code = CTT_ACK;
+			ans.data = sizeof(ADDRINT);
+		case CTT_START_PROCESS:
+			// does not return
+			start_process();
+			break;
+		default:
+	    	MSG("UNKNOWN PACKET RECEIVED WITH CODE %d\n", res->code);
+	      	last_packet = "UNKNOWN " + res->code;
+	      	PIN_ExitProcess(0);
+	      	break;
+	}
+
 }
 
 static bool handle_packets(int total, const string &until_packet)
@@ -228,6 +256,51 @@ static bool handle_packets(int total, const string &until_packet)
 }
 
 //--------------------------------------------------------------------------
+static VOID ida_listener(VOID *)
+{
+  MSG("Listener started...\n");
+  run_listener = true;
+
+  while ( run_listener )
+  {
+    DEBUG("Handling events in ida_listener\n");
+    idacmd_packet_t res;
+    ssize_t bytes = pin_recv(cli_socket, &res, sizeof(res), "ida_pin_listener");
+    if ( bytes == -1 )
+    {
+      error_msg("recv");
+      continue;
+    }
+
+    if ( !handle_packet(&res) )
+    {
+      MSG("Error handling %s packet, exiting...\n", last_packet);
+      PIN_ExitThread(0);
+    }
+
+    if ( PIN_IsProcessExiting() && process_exit )
+    {
+      MSG("Process is exiting...\n");
+      break;
+    }
+  }
+}
+
+//--------------------------------------------------------------------------
+// ida_listener callbacks
+static void start_process(void)
+{
+	IMG_AddInstrumentFunction(Image, NULL);
+    PIN_SemaphoreInit(&listener_sem);
+	THREADID thread_id = PIN_SpawnInternalThread(ida_listener, NULL, 0, &listener_uid);
+  	if ( thread_id == INVALID_THREADID )
+	{
+	    MSG("PIN_SpawnInternalThread(BufferProcessingThread) failed\n");
+	    exit(-1);
+	}
+}
+
+//--------------------------------------------------------------------------
 // instrumentation functions
 
 bool InHeap(ADDRINT addr)
@@ -240,61 +313,61 @@ bool InHeap(ADDRINT addr)
 // realloc callbacks
 VOID RecordReallocInvocation(ADDRINT ptr, size_t requested_size)
 {
-	last_op.id = HO_REALLOC;
-	last_op.args[0] = ptr;
-	last_op.args[1] = requested_size;
+	heap_operation.code = HO_REALLOC;
+	heap_operation.args[0] = ptr;
+	heap_operation.args[1] = requested_size;
 }
 
 VOID RecordReallocReturned(ADDRINT * addr, ADDRINT return_ip)
 {
-	last_op.return_value=(ADDRINT)addr;
-	last_op.return_ip = return_ip;
-	PIN_SafeCopy(&last_op.chunk, addr-2, sizeof(malloc_chunk));
+	heap_operation.return_value=(ADDRINT)addr;
+	heap_operation.return_ip = return_ip;
+	PIN_SafeCopy(&heap_operation.chunk, addr-2, sizeof(malloc_chunk));
 }
 
 //--------------------------------------------------------------------------
 // malloc callbacks
 VOID RecordMallocInvocation(size_t requested_size)
 {
-	last_op.id = HO_MALLOC;
-	last_op.args[0] = requested_size;
+	heap_operation.code = HO_MALLOC;
+	heap_operation.args[0] = requested_size;
 }
 
 VOID RecordMallocReturned(ADDRINT * addr, ADDRINT return_ip)
 {
-	last_op.return_value=(ADDRINT)addr;
-	last_op.return_ip = return_ip;
-	PIN_SafeCopy(&last_op.chunk, addr-2, sizeof(malloc_chunk));
+	heap_operation.return_value=(ADDRINT)addr;
+	heap_operation.return_ip = return_ip;
+	PIN_SafeCopy(&heap_operation.chunk, addr-2, sizeof(malloc_chunk));
 }
 
 //--------------------------------------------------------------------------
 // calloc callbacks
 VOID RecordCallocInvocation(size_t num, size_t requested_size) // After certain size calloc is not caught 0_o
 {
-	last_op.id = HO_CALLOC;
-	last_op.args[0] = num;
-	last_op.args[1] = requested_size;
+	heap_operation.code = HO_CALLOC;
+	heap_operation.args[0] = num;
+	heap_operation.args[1] = requested_size;
 }
 
 VOID RecordCallocReturned(ADDRINT * addr, ADDRINT return_ip)
 {
-	last_op.return_value=(ADDRINT)addr;
-	last_op.return_ip = return_ip;
-	PIN_SafeCopy(&last_op.chunk, addr-2, sizeof(malloc_chunk));
+	heap_operation.return_value=(ADDRINT)addr;
+	heap_operation.return_ip = return_ip;
+	PIN_SafeCopy(&heap_operation.chunk, addr-2, sizeof(malloc_chunk));
 }
 
 //--------------------------------------------------------------------------
 // free callbacks
 VOID RecordFreeInvocation(ADDRINT addr)
 {
-	last_op.id = HO_FREE;
-	last_op.args[0] = addr;
+	heap_operation.code = HO_FREE;
+	heap_operation.args[0] = addr;
 }
 
 VOID RecordFreeReturned(ADDRINT return_ip)
 {
-	last_op.return_value = 0;
-	last_op.return_ip = return_ip;
+	heap_operation.return_value = 0;
+	heap_operation.return_ip = return_ip;
 }
 
 //--------------------------------------------------------------------------
@@ -344,7 +417,6 @@ int main(int argc, char **argv)
 {
 	PIN_Init(argc, argv);
 	PIN_InitSymbols();
-	IMG_AddInstrumentFunction(Image, NULL);
 	HEAP_BASE = (size_t)sbrk(0);
 	if ( !listen_to_ida() )
 	    PIN_ExitApplication(-1);
