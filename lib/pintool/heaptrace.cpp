@@ -7,9 +7,9 @@
 
 //--------------------------------------------------------------------------
 // forward declarations
-static bool handle_packet(idapin_packet_t *res);
-static ssize_t pin_recv(PIN_SOCKET fd, void *buf, size_t n, const char *from_where);
-static ssize_t pin_send(PIN_SOCKET fd, const void *buf, size_t n, const char *from_where);
+static bool handle_packet(idacmd_packet_t *res);
+static ssize_t pin_recv(int fd, void *buf, size_t n, const char *from_where);
+//static ssize_t pin_send(int fd, const void *buf, size_t n, const char *from_where);
 static bool handle_packets(int total, const string &until_packet = "");
 static void check_network_error(ssize_t ret, const char *from_where);
 
@@ -21,7 +21,7 @@ static void check_network_error(ssize_t ret, const char *from_where);
     if ( debug_tracer > 0 )                               \
     {                                                     \
       char buf[1024];                                     \
-      pin_snprintf(buf, sizeof(buf), fmt, ##__VA_ARGS__); \
+      snprintf(buf, sizeof(buf), fmt, ##__VA_ARGS__); 	  \
       fprintf(stderr, "%s", buf);                         \
       LOG(buf);                                           \
     }                                                     \
@@ -36,11 +36,6 @@ static void check_network_error(ssize_t ret, const char *from_where);
   }                                                       \
   while ( 0 )
 
-inline static void error_msg(const char *msg)
-{
-  MSG("%s: %s\n", msg, strerror(errno));
-}
-
 
 //--------------------------------------------------------------------------
 // Command line arguments
@@ -48,23 +43,32 @@ inline static void error_msg(const char *msg)
 KNOB<int> IdaPort(KNOB_MODE_WRITEONCE, "pintool", "p", "12345", "Port where IDA Pro connects to PIN");
 
 //--------------------------------------------------------------------------
-// sockets
-static socket srv_socket, portno, cli_socket;
+// sockets and port number
+static int srv_socket, portno, cli_socket;
 
 //--------------------------------------------------------------------------
 // semaphores
-static PIN_SEMAPHORE listener_sem;
+//static PIN_SEMAPHORE listener_sem;
 
 //--------------------------------------------------------------------------
 // constants for heap handling
-static size_t SIZE_SZ = sizeof(size_t);
-static size_t MALLOC_ALIGN_MASK = ~(2 * SIZE_SZ - 1);
+//static size_t SIZE_SZ = sizeof(size_t);
+//static size_t MALLOC_ALIGN_MASK = ~(2 * SIZE_SZ - 1);
 
 //--------------------------------------------------------------------------
 // global variables
 heap_op_packet_t last_op;
+static const char *last_packet = "NONE";
+static int debug_tracer = 1;
 
 size_t HEAP_BASE = 0;
+
+//--------------------------------------------------------------------------
+// error message
+inline static void error_msg(const char *msg)
+{
+  MSG("%s: %s\n", msg, strerror(errno));
+}
 
 //--------------------------------------------------------------------------
 // basic network functionality
@@ -72,7 +76,7 @@ static bool init_socket(void)
 {
 	portno	= IdaPort;
 	srv_socket = socket(AF_INET, SOCK_STREAM, 0);
-	if ( srv_socket == (PIN_SOCKET)-1 )
+	if ( srv_socket == (int)-1 )
 	{
 		error_msg("socket");
 		return false;
@@ -95,7 +99,7 @@ static bool init_socket(void)
 	{
 	MSG("Listening at port %d...\n", (int)portno);
 
-	pin_socklen_t clilen = sizeof(sa);
+	socklen_t clilen = sizeof(sa);
 
 	cli_socket = accept(srv_socket, ((struct sockaddr *)&sa), &clilen);
 	if ( cli_socket > 0 )
@@ -104,14 +108,14 @@ static bool init_socket(void)
 	return false;
 }
 
-static ssize_t pin_send(socket fd, const void *buf, size_t n, const char *from_where)
+/*static ssize_t pin_send(int fd, const void *buf, size_t n, const char *from_where)
 {
   ssize_t ret = send(fd, buf, n, 0);
   check_network_error(ret, from_where);
   return ret;
-}
+}*/
 
-static ssize_t pin_recv(PIN_SOCKET fd, void *buf, size_t n, const char *from_where)
+static ssize_t pin_recv(int fd, void *buf, size_t n, const char *from_where)
 {
   char *bufp = (char*)buf;
   ssize_t total = 0;
@@ -172,6 +176,11 @@ static bool listen_to_ida(void)
   return ret;
 }
 
+static bool handle_packet(idacmd_packet_t *res)
+{
+	return true;
+}
+
 static bool handle_packets(int total, const string &until_packet)
 {
   int packets = 0;
@@ -217,7 +226,7 @@ VOID RecordReallocInvocation(ADDRINT ptr, size_t requested_size)
 {
 	last_op.id = HO_REALLOC;
 	last_op.args[0] = ptr;
-	last_op.args[1] = req_size;
+	last_op.args[1] = requested_size;
 }
 
 VOID RecordReallocReturned(ADDRINT * addr, ADDRINT return_ip)
@@ -248,7 +257,7 @@ VOID RecordCallocInvocation(size_t num, size_t requested_size) // After certain 
 {
 	last_op.id = HO_CALLOC;
 	last_op.args[0] = num;
-	last_op.args[1] = req_size;
+	last_op.args[1] = requested_size;
 }
 
 VOID RecordCallocReturned(ADDRINT * addr, ADDRINT return_ip)
@@ -262,7 +271,7 @@ VOID RecordCallocReturned(ADDRINT * addr, ADDRINT return_ip)
 // free callbacks
 VOID RecordFreeInvocation(ADDRINT addr)
 {
-	last_op.id = HO_FREE:
+	last_op.id = HO_FREE;
 	last_op.args[0] = addr;
 }
 

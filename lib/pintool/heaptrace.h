@@ -25,6 +25,9 @@
 
 using namespace std;
 
+typedef unsigned int uint32;
+typedef unsigned char uchar;
+
 //--------------------------------------------------------------------------
 struct malloc_chunk
 {
@@ -39,11 +42,11 @@ struct malloc_chunk
 //--------------------------------------------------------------------------
 enum heap_op_id_t
 {
-	HO_IDLE		=	0x00000000; //	nothing (should not be sent normally)
-	HO_MALLOC	=	0x00000001;	//	malloc
-	HO_REALLOC	=	0x00000002; //	realloc
-	HO_CALLOC	=	0x00000004;	//	calloc
-	HO_FREE		=	0x00000008;	//	free
+	HO_IDLE		=	0x00000000, //	nothing (should not be sent normally)
+	HO_MALLOC	=	0x00000001,	//	malloc
+	HO_REALLOC	=	0x00000002, //	realloc
+	HO_CALLOC	=	0x00000004,	//	calloc
+	HO_FREE		=	0x00000008,	//	free
 };
 
 struct heap_op_packet_t			//	standard packet registering heap operations 
@@ -61,7 +64,7 @@ struct heap_op_packet_t			//	standard packet registering heap operations
 
 struct idacmd_packet_t
 {
-	
+
 };
 
 #endif
