@@ -12,6 +12,7 @@ static ssize_t pin_recv(int fd, void *buf, size_t n, const char *from_where);
 //static ssize_t pin_send(int fd, const void *buf, size_t n, const char *from_where);
 static bool handle_packets(int total, const string &until_packet = "");
 static void check_network_error(ssize_t ret, const char *from_where);
+static VOID Image(IMG img, VOID *v);
 
 //--------------------------------------------------------------------------
 // macros
@@ -50,6 +51,7 @@ static int srv_socket, portno, cli_socket;
 // thread related stuff
 static PIN_SEMAPHORE listener_sem;
 static PIN_THREAD_UID listener_uid;
+static PIN_LOCK heap_op_lock;
 
 //--------------------------------------------------------------------------
 // constants for heap handling
@@ -61,8 +63,15 @@ static PIN_THREAD_UID listener_uid;
 heap_op_packet_t heap_operation;
 static const char *last_packet = "NONE";
 static int debug_tracer = 2;
+// do we want to continue running listener?
 static bool run_listener = false;
+// is process exiting?
+static bool process_exit = false;
 size_t HEAP_BASE = 0;
+
+// list of all the heap operation that will be passed to IDA
+typedef std::deque<heap_op_packet_t> heap_op_list_t;
+static heap_op_list_t heap_ops;
 
 //--------------------------------------------------------------------------
 // error message
@@ -109,7 +118,7 @@ static bool init_socket(void)
 	return false;
 }
 
-/*static ssize_t pin_send(int fd, const void *buf, size_t n, const char *from_where)
+static ssize_t pin_send(int fd, const void *buf, size_t n, const char *from_where)
 {
   ssize_t ret = send(fd, buf, n, 0);
   check_network_error(ret, from_where);
@@ -130,7 +139,7 @@ static bool send_packet(
       bytes = pin_recv(cli_socket, answer, ans_size, from);
   }
   return bytes != -1;
-} */
+} 
 
 static ssize_t pin_recv(int fd, void *buf, size_t n, const char *from_where)
 {
@@ -169,6 +178,80 @@ static void check_network_error(ssize_t ret, const char *from_where)
     MSG("Timeout, called from %s\n", from_where);
   }
 }
+
+//--------------------------------------------------------------------------
+static VOID ida_listener(VOID *)
+{
+  MSG("Listener started...\n");
+  run_listener = true;
+
+  while ( run_listener )
+  {
+    DEBUG("Handling events in ida_listener\n");
+    idacmd_packet_t res;
+    ssize_t bytes = pin_recv(cli_socket, &res, sizeof(res), "ida_pin_listener");
+    if ( bytes == -1 )
+    {
+      error_msg("recv");
+      continue;
+    }
+
+    if ( !handle_packet(&res) )
+    {
+      MSG("Error handling %s packet, exiting...\n", last_packet);
+      PIN_ExitThread(0);
+    }
+
+    if ( PIN_IsProcessExiting() && heap_ops.empty() && process_exit )
+    {
+      MSG("Process is exiting...\n");
+      break;
+    }
+  }
+}
+
+static VOID fini_cb(INT32, VOID *)
+{
+  DEBUG("Marking the trace as full\n");
+
+  MSG("Waiting for listener thread to exit...\n");
+  if ( PIN_WaitForThreadTermination(listener_uid, 10000, NULL) )
+  {
+    MSG("Everything OK\n");
+  }
+  else
+  {
+    MSG("Timeout waiting for listener thread.\n");
+  }
+}
+
+//--------------------------------------------------------------------------
+// ida_listener callbacks
+static void start_process(void)
+{
+	IMG_AddInstrumentFunction(Image, NULL);
+    
+    // initialize listener_semaphore
+    PIN_SemaphoreInit(&listener_sem);
+  	PIN_SemaphoreClear(&listener_sem);
+
+  	PIN_InitLock(&heap_op_lock);
+
+	// Register fini_cb to be called when the application exits
+  	PIN_AddFiniUnlockedFunction(fini_cb, 0);
+
+  	// Create thread for communication with IDA
+	THREADID thread_id = PIN_SpawnInternalThread(ida_listener, NULL, 0, &listener_uid);
+  	if ( thread_id == INVALID_THREADID )
+	{
+	    MSG("PIN_SpawnInternalThread(BufferProcessingThread) failed\n");
+	    exit(-1);
+	}
+
+	// Start the program, never returns
+  	PIN_StartProgram();
+}
+
 
 //--------------------------------------------------------------------------
 // conversation with ida functions
@@ -212,6 +295,7 @@ static bool handle_packet(idacmd_packet_t *res)
 		case CTT_HELLO:
 			ans.code = CTT_ACK;
 			ans.data = sizeof(ADDRINT);
+			ret = send_packet(&ans, sizeof(idacmd_packet_t), NULL, 0, __FUNCTION__);
 		case CTT_START_PROCESS:
 			// does not return
 			start_process();
@@ -222,7 +306,8 @@ static bool handle_packet(idacmd_packet_t *res)
 	      	PIN_ExitProcess(0);
 	      	break;
 	}
-
+  	DEBUG("LAST PACKET WAS %s\n", last_packet);
+  	return ret;
 }
 
 static bool handle_packets(int total, const string &until_packet)
@@ -256,123 +341,88 @@ static bool handle_packets(int total, const string &until_packet)
 }
 
 //--------------------------------------------------------------------------
-static VOID ida_listener(VOID *)
-{
-  MSG("Listener started...\n");
-  run_listener = true;
-
-  while ( run_listener )
-  {
-    DEBUG("Handling events in ida_listener\n");
-    idacmd_packet_t res;
-    ssize_t bytes = pin_recv(cli_socket, &res, sizeof(res), "ida_pin_listener");
-    if ( bytes == -1 )
-    {
-      error_msg("recv");
-      continue;
-    }
-
-    if ( !handle_packet(&res) )
-    {
-      MSG("Error handling %s packet, exiting...\n", last_packet);
-      PIN_ExitThread(0);
-    }
-
-    if ( PIN_IsProcessExiting() && process_exit )
-    {
-      MSG("Process is exiting...\n");
-      break;
-    }
-  }
-}
-
-//--------------------------------------------------------------------------
-// ida_listener callbacks
-static void start_process(void)
-{
-	IMG_AddInstrumentFunction(Image, NULL);
-    PIN_SemaphoreInit(&listener_sem);
-	THREADID thread_id = PIN_SpawnInternalThread(ida_listener, NULL, 0, &listener_uid);
-  	if ( thread_id == INVALID_THREADID )
-	{
-	    MSG("PIN_SpawnInternalThread(BufferProcessingThread) failed\n");
-	    exit(-1);
-	}
-}
-
-//--------------------------------------------------------------------------
 // instrumentation functions
-
-bool InHeap(ADDRINT addr)
+/*static bool InHeap(ADDRINT addr)
 {
 	ADDRINT compare = HEAP_BASE & (ADDRINT)0xfff00000;
 	return (addr & (ADDRINT)0xfff00000) == compare;
+}*/
+
+static VOID add_last_heap_op()
+{
+	PIN_GetLock(&heap_op_lock, PIN_GetTid());
+	heap_ops.push_back(heap_operation);
+	PIN_ReleaseLock(&heap_op_lock);
 }
 
 //--------------------------------------------------------------------------
 // realloc callbacks
-VOID RecordReallocInvocation(ADDRINT ptr, size_t requested_size)
+static VOID RecordReallocInvocation(ADDRINT ptr, size_t requested_size)
 {
 	heap_operation.code = HO_REALLOC;
 	heap_operation.args[0] = ptr;
 	heap_operation.args[1] = requested_size;
 }
 
-VOID RecordReallocReturned(ADDRINT * addr, ADDRINT return_ip)
+static VOID RecordReallocReturned(ADDRINT * addr, ADDRINT return_ip)
 {
 	heap_operation.return_value=(ADDRINT)addr;
 	heap_operation.return_ip = return_ip;
 	PIN_SafeCopy(&heap_operation.chunk, addr-2, sizeof(malloc_chunk));
+	add_last_heap_op();
 }
 
 //--------------------------------------------------------------------------
 // malloc callbacks
-VOID RecordMallocInvocation(size_t requested_size)
+static VOID RecordMallocInvocation(size_t requested_size)
 {
 	heap_operation.code = HO_MALLOC;
 	heap_operation.args[0] = requested_size;
 }
 
-VOID RecordMallocReturned(ADDRINT * addr, ADDRINT return_ip)
+static VOID RecordMallocReturned(ADDRINT * addr, ADDRINT return_ip)
 {
 	heap_operation.return_value=(ADDRINT)addr;
 	heap_operation.return_ip = return_ip;
 	PIN_SafeCopy(&heap_operation.chunk, addr-2, sizeof(malloc_chunk));
+	add_last_heap_op();
 }
 
 //--------------------------------------------------------------------------
 // calloc callbacks
-VOID RecordCallocInvocation(size_t num, size_t requested_size) // After certain size calloc is not caught 0_o
+static VOID RecordCallocInvocation(size_t num, size_t requested_size) // After certain size calloc is not caught 0_o
 {
 	heap_operation.code = HO_CALLOC;
 	heap_operation.args[0] = num;
 	heap_operation.args[1] = requested_size;
 }
 
-VOID RecordCallocReturned(ADDRINT * addr, ADDRINT return_ip)
+static VOID RecordCallocReturned(ADDRINT * addr, ADDRINT return_ip)
 {
 	heap_operation.return_value=(ADDRINT)addr;
 	heap_operation.return_ip = return_ip;
 	PIN_SafeCopy(&heap_operation.chunk, addr-2, sizeof(malloc_chunk));
+	add_last_heap_op();
 }
 
 //--------------------------------------------------------------------------
 // free callbacks
-VOID RecordFreeInvocation(ADDRINT addr)
+static VOID RecordFreeInvocation(ADDRINT addr)
 {
 	heap_operation.code = HO_FREE;
 	heap_operation.args[0] = addr;
 }
 
-VOID RecordFreeReturned(ADDRINT return_ip)
+static VOID RecordFreeReturned(ADDRINT return_ip)
 {
 	heap_operation.return_value = 0;
 	heap_operation.return_ip = return_ip;
+	add_last_heap_op();
 }
 
 //--------------------------------------------------------------------------
 // image instrumentation
-VOID Image(IMG img, VOID *v)
+static VOID Image(IMG img, VOID *v)
 {
 	RTN rtn = RTN_FindByName(img, "malloc");
 	if(rtn.is_valid())
