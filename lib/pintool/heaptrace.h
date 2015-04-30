@@ -44,7 +44,7 @@ struct malloc_chunk
 };
 
 //--------------------------------------------------------------------------
-enum heap_op_id_t
+enum heap_op_type_t
 {
 	HO_IDLE		=	0x00000000, //	nothing (should not be sent normally)
 	HO_MALLOC	=	0x00000001,	//	malloc
@@ -55,13 +55,13 @@ enum heap_op_id_t
 
 struct heap_op_packet_t			//	standard packet registering heap operations 
 {
-	heap_op_id_t id;
+	heap_op_type_t code;
 	ADDRINT return_value;
 	ADDRINT return_ip;
 	ADDRINT args[MAX_ARGS];
 	malloc_chunk chunk;
 
-	heap_op_packet_t()	:	id(HO_IDLE)	{}
+	heap_op_packet_t()	:	code(HO_IDLE)	{}
 };
 
 //--------------------------------------------------------------------------
@@ -74,6 +74,7 @@ enum cmd_type_t
 	CTT_WRITE	=	4,	//	write 'size' bytes to 'data'
 	CTT_START	=	5,	//	start application
 	CTT_EXIT	=	6,	//	exit process
+	CTT_END		=	7,	//	marks end of enum
 };
 
 struct idacmd_packet_t
