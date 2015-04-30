@@ -67,14 +67,15 @@ struct heap_op_packet_t			//	standard packet registering heap operations
 //--------------------------------------------------------------------------
 enum cmd_type_t
 {
-	CTT_ACK		=	0,	//	do nothing
-	CTT_ERROR	=	1,	//	signal an error
-	CTT_HELLO	=	2,	//	first packet
-	CTT_READ	=	3,	//	read 'size' bytes of memory from 'data'
-	CTT_WRITE	=	4,	//	write 'size' bytes to 'data'
-	CTT_START	=	5,	//	start application
-	CTT_EXIT	=	6,	//	exit process
-	CTT_END		=	7,	//	marks end of enum
+	CTT_ACK				=	0,	//	do nothing
+	CTT_ERROR			=	1,	//	signal an error
+	CTT_HELLO			=	2,	//	first packet
+	CTT_READ_MEMORY		=	3,	//	read 'size' bytes of memory from 'data'
+	CTT_WRITE_MEMORY	=	4,	//	write 'size' bytes to 'data'
+	CTT_START_PROCESS	=	5,	//	start application
+	CTT_EXIT_PROCESS	=	6,	//	exit process
+	CTT_HEAP_INFO		=	7,	//	get heap info
+	CTT_END				=	8,	//	marks end of enum
 };
 
 struct idacmd_packet_t
