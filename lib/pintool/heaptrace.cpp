@@ -67,6 +67,8 @@ static int debug_tracer = 2;
 static bool run_listener = false;
 // is process exiting?
 static bool process_exit = false;
+// is process started?
+static bool process_started = false;
 size_t HEAP_BASE = 0;
 
 // list of all the heap operation that will be passed to IDA
@@ -225,6 +227,12 @@ static VOID fini_cb(INT32, VOID *)
   }
 }
 
+static VOID app_start_cb(VOID *)
+{
+  DEBUG("Setting process started to true\n");
+  process_started = true;
+}
+
 //--------------------------------------------------------------------------
 // ida_listener callbacks
 static void start_process(void)
@@ -239,6 +247,9 @@ static void start_process(void)
 
 	// Register fini_cb to be called when the application exits
   	PIN_AddFiniUnlockedFunction(fini_cb, 0);
+
+  	// Register aplication start callback
+  	PIN_AddApplicationStartFunction(app_start_cb, 0);
 
   	// Create thread for communication with IDA
 	THREADID thread_id = PIN_SpawnInternalThread(ida_listener, NULL, 0, &listener_uid);
@@ -324,12 +335,14 @@ static bool handle_packet(idacmd_packet_t *res)
 			break;
 		case CTT_WRITE_MEMORY:
 			break;
-	    case PTT_EXIT_PROCESS:
+	    case CTT_EXIT_PROCESS:
 	     	MSG("Received EXIT PROCESS, exiting from process...\n");
 	      	run_listener = false;
 	      	// does not return
 	      	PIN_ExitProcess(0);
 		case CTT_CHECK_HEAP_OP:
+			ans.data = 0;
+			if(!heap_ops.empty() && process_started)
 			break;
 		case CTT_GET_HEAP_OP:
 			break;
