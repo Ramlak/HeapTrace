@@ -252,6 +252,20 @@ static void start_process(void)
   	PIN_StartProgram();
 }
 
+static bool read_memory(ADDRINT addr, size_t size)
+{
+	DEBUG("Reading %d bytes at address %p\n", size, (void*)addr);
+
+  	idamem_response_pkt_t pkt;
+  	// read the data asked by IDA
+  	size_t copy_size = size < sizeof(pkt.buf) ? size : sizeof(pkt.buf);
+  	ssize_t read_bytes = PIN_SafeCopy(pkt.buf, (void*)addr, copy_size);
+  	pkt.size = (uint32)read_bytes;
+  	pkt.code = CTT_READ_MEMORY;
+
+  	ssize_t bytes = pin_send(cli_socket, &pkt, sizeof(pkt), __FUNCTION__);
+  	return bytes == sizeof(pkt);
+}
 
 //--------------------------------------------------------------------------
 // conversation with ida functions
@@ -275,6 +289,7 @@ static const char *const packet_names[] =
 {
   "ACK",           "ERROR",       "HELLO",       "READ MEMORY",
   "WRITE MEMORY",	"START PROCESS",	"EXIT PROCESS", "HEAP INFO", 
+  "CHECK HEAP OPERATIONS", "GET HEAP OPERATION",
 };
 
 static bool handle_packet(idacmd_packet_t *res)
@@ -289,7 +304,9 @@ static bool handle_packet(idacmd_packet_t *res)
 		MSG("Unknown packet type %d, exiting...\n", res->code);
 		PIN_ExitProcess(0);
 	}
+
 	last_packet = packet_names[res->code];
+	
 	switch ( res->code )
 	{
 		case CTT_HELLO:
@@ -299,6 +316,22 @@ static bool handle_packet(idacmd_packet_t *res)
 		case CTT_START_PROCESS:
 			// does not return
 			start_process();
+			break;
+		case CTT_READ_MEMORY:
+			ans.size = 0;
+			ans.code = CTT_READ_MEMORY;
+			read_memory(res->data, res->size);
+			break;
+		case CTT_WRITE_MEMORY:
+			break;
+	    case PTT_EXIT_PROCESS:
+	     	MSG("Received EXIT PROCESS, exiting from process...\n");
+	      	run_listener = false;
+	      	// does not return
+	      	PIN_ExitProcess(0);
+		case CTT_CHECK_HEAP_OP:
+			break;
+		case CTT_GET_HEAP_OP:
 			break;
 		default:
 	    	MSG("UNKNOWN PACKET RECEIVED WITH CODE %d\n", res->code);

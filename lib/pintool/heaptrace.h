@@ -88,4 +88,13 @@ struct idacmd_packet_t
 	idacmd_packet_t(): code(CTT_ACK), size(0), data(BADADDR){};
 };
 
+//--------------------------------------------------------------------------
+#define MEM_CHUNK_SIZE 1024
+struct idamem_response_pkt_t
+{
+  cmd_type_t code;
+  size_t size;
+  unsigned char buf[MEM_CHUNK_SIZE];
+};
+
 #endif
