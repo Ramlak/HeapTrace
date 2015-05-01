@@ -9,8 +9,8 @@
 // forward declarations
 static bool handle_packet(idacmd_packet_t *res);
 static ssize_t pin_recv(int fd, void *buf, size_t n, const char *from_where);
-//static ssize_t pin_send(int fd, const void *buf, size_t n, const char *from_where);
 static bool handle_packets(int total, const string &until_packet = "");
+static VOID add_last_heap_op();
 static void check_network_error(ssize_t ret, const char *from_where);
 static VOID Image(IMG img, VOID *v);
 
@@ -62,13 +62,22 @@ static PIN_LOCK heap_op_lock;
 // global variables
 heap_op_packet_t heap_operation;
 static const char *last_packet = "NONE";
-static int debug_tracer = 2;
+static int debug_tracer = 1;
 // do we want to continue running listener?
 static bool run_listener = false;
 // is process exiting?
 static bool process_exit = false;
 // is process started?
 static bool process_started = false;
+// number of recent heap operations
+static int recent_heap_ops = 0;
+// first instruction visited?
+static int first_visited = false;
+// range of main executable
+ADDRINT min_address, max_address;
+// last_instruction
+static ADDRINT last_instruction;
+
 size_t HEAP_BASE = 0;
 
 // list of all the heap operation that will be passed to IDA
@@ -226,10 +235,111 @@ static VOID fini_cb(INT32, VOID *)
   }
 }
 
+static const char *const forbidden_section_names[] =
+{
+	".got.plt", ".plt", ".got",
+};
+
+/*bool is_allowed(const char * sec_name)
+{
+	DEBUG("%d\n", strcmp(forbidden_section_names[1])==0);
+	for(unsigned int i = 0; i < sizeof(forbidden_section_names); i++)
+	{
+		if(!strcmp(forbidden_section_names[i], sec_name))
+			return false;
+	}
+	return true;
+}*/
+
 static VOID app_start_cb(VOID *)
 {
   DEBUG("Setting process started to true\n");
   process_started = true;
+
+  IMG img;
+  img.invalidate();
+  for( img = APP_ImgHead(); IMG_Valid(img); img = IMG_Next(img) )
+  {
+    if ( IMG_IsMainExecutable(img) )
+      break;
+  }
+
+  if ( !img.is_valid() )
+  {
+    MSG("Cannot find the 1st instruction of the main executable!\n");
+    abort();
+  }
+  SEC sec;
+  for(sec = IMG_SecHead(img); SEC_Valid(sec); sec = SEC_Next(sec))
+  {
+  	if(!strcmp(SEC_Name(sec).c_str(), ".text"))
+  	{	
+  		break;
+  	}
+  }
+  // for now let's just trace .text section. Maybe in future i will add more.
+  // We need this because otherwise all calls to malloc would point to .got or .plt
+  min_address = SEC_Address(sec);
+  max_address = min_address + SEC_Size(sec);
+  DEBUG("Address space: %p-%p\n", (void*)min_address, (void*)max_address);
+}
+
+//--------------------------------------------------------------------------
+static ADDRINT listener_not_running(VOID *)
+{
+  return !run_listener;
+}
+
+static void wait_for_listener(void)
+{
+  PIN_SemaphoreWait(&listener_sem);
+}
+
+bool check_address(ADDRINT addr)
+{
+  if ( addr >= min_address && addr <= max_address )
+ 	return true;
+  return false;
+}
+
+//--------------------------------------------------------------------------
+// This function is called before every instruction is executed
+static VOID PIN_FAST_ANALYSIS_CALL ins_logic_cb(VOID *ip)
+{
+  //DEBUG("ADDR: %p\n", ip); // that is heavy output
+  if(!first_visited)
+  {
+  	recent_heap_ops = 0;
+  	first_visited = true;
+  }
+  if(recent_heap_ops == 1)
+  {
+  	if(heap_operation.code == HO_FREE)
+  		PIN_SafeCopy(&heap_operation.chunk, (ADDRINT*)(heap_operation.args[0])-2, sizeof(malloc_chunk));
+  	add_last_heap_op();
+  } else if(recent_heap_ops > 1)
+  {
+  	MSG("Too many recent heap operations (%d)...Exiting\n", recent_heap_ops);
+  	PIN_ExitProcess(0);
+  }
+  last_instruction = (ADDRINT)ip;
+}
+
+static VOID instruction_cb(INS ins, VOID *)
+{
+
+  // Insert a call to ins_logic_cb before every instruction
+  ADDRINT addr = INS_Address(ins);
+  if ( check_address(addr) )
+  {
+    if ( !run_listener )
+    {
+      // add the code for synching with the listener thread
+      INS_InsertIfCall(ins, IPOINT_BEFORE, (AFUNPTR)listener_not_running, IARG_END);
+      INS_InsertThenCall(ins, IPOINT_BEFORE, (AFUNPTR)wait_for_listener, IARG_END);
+    }
+    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)ins_logic_cb, IARG_FAST_ANALYSIS_CALL, IARG_INST_PTR, IARG_END);
+  }
 }
 
 //--------------------------------------------------------------------------
@@ -237,7 +347,7 @@ static VOID app_start_cb(VOID *)
 static void start_process(void)
 {
 	IMG_AddInstrumentFunction(Image, NULL);
-	
+	INS_AddInstrumentFunction(instruction_cb, 0);
 	// initialize listener_semaphore
 	PIN_SemaphoreInit(&listener_sem);
 	PIN_SemaphoreClear(&listener_sem);
@@ -439,72 +549,82 @@ static VOID add_last_heap_op()
 	heap_ops.push_back(heap_operation);
 	DEBUG("Last operation on heap is %s\n", operation_names[heap_operation.code]);
 	PIN_ReleaseLock(&heap_op_lock);
+	recent_heap_ops = 0;
 }
 
 //--------------------------------------------------------------------------
 // realloc callbacks
 static VOID RecordReallocInvocation(ADDRINT ptr, size_t requested_size)
 {
+	DEBUG("Realloc invoked at %p\n", (void*)last_instruction);
 	heap_operation.code = HO_REALLOC;
 	heap_operation.args[0] = ptr;
 	heap_operation.args[1] = requested_size;
+	heap_operation.call_addr = last_instruction;
 }
 
-static VOID RecordReallocReturned(ADDRINT * addr, ADDRINT return_ip)
+static VOID RecordReallocReturned(ADDRINT * addr)
 {
 	heap_operation.return_value=(ADDRINT)addr;
-	heap_operation.return_ip = return_ip;
-	add_last_heap_op();
+	recent_heap_ops += 1;
 }
 
 //--------------------------------------------------------------------------
 // malloc callbacks
 static VOID RecordMallocInvocation(size_t requested_size)
 {
+	DEBUG("Malloc(%d) invoked at %p\n", (int)requested_size, (void*)last_instruction);
+	heap_operation.call_addr = last_instruction;
 	heap_operation.code = HO_MALLOC;
 	heap_operation.args[0] = requested_size;
 }
 
-static VOID RecordMallocReturned(ADDRINT * addr, ADDRINT return_ip)
+static VOID RecordMallocReturned(ADDRINT * addr)
 {
 	heap_operation.return_value=(ADDRINT)addr;
-	heap_operation.return_ip = return_ip;
-	add_last_heap_op();
+	recent_heap_ops += 1;
 }
 
 //--------------------------------------------------------------------------
 // calloc callbacks
 static VOID RecordCallocInvocation(size_t num, size_t requested_size) // After certain size calloc is not caught 0_o
 {
+	DEBUG("Calloc invoked at %p\n", (void*)last_instruction);
 	heap_operation.code = HO_CALLOC;
 	heap_operation.args[0] = num;
+	heap_operation.call_addr = last_instruction;
 	heap_operation.args[1] = requested_size;
 }
 
-static VOID RecordCallocReturned(ADDRINT * addr, ADDRINT return_ip)
+static VOID RecordCallocReturned(ADDRINT * addr)
 {
 	heap_operation.return_value=(ADDRINT)addr;
-	heap_operation.return_ip = return_ip;
-	add_last_heap_op();
+	recent_heap_ops += 1;
 }
 
 //--------------------------------------------------------------------------
 // free callbacks
 static VOID RecordFreeInvocation(ADDRINT addr) // Free return isn't hooked for some reason (this is serious!)
 {
+	DEBUG("Free invoked at %p\n", (void*)last_instruction);
 	heap_operation.code = HO_FREE;
+	heap_operation.call_addr = last_instruction;
 	heap_operation.args[0] = addr;
 	heap_operation.return_value = 0;
-	add_last_heap_op();
+	recent_heap_ops += 1;
 }
 
 //--------------------------------------------------------------------------
 // image instrumentation
 static VOID Image(IMG img, VOID *v)
 {
+	if(!strstr(IMG_Name(img).c_str(), "libc"))
+		return;
+
 	RTN rtn = RTN_FindByName(img, "malloc");
 	if(rtn.is_valid())
 	{
+		DEBUG("Found malloc in %s\n", IMG_Name(img).c_str());
 		RTN_Open(rtn);
 		RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)RecordMallocInvocation, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
 		RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)RecordMallocReturned, IARG_FUNCRET_EXITPOINT_VALUE, IARG_RETURN_IP, IARG_END);
@@ -514,6 +634,8 @@ static VOID Image(IMG img, VOID *v)
 	rtn = RTN_FindByName(img, "free");
 	if(rtn.is_valid())
 	{
+
+		DEBUG("Found free in %s\n", IMG_Name(img).c_str());
 		RTN_Open(rtn);
 		RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)RecordFreeInvocation, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
 		RTN_Close(rtn);
@@ -522,6 +644,7 @@ static VOID Image(IMG img, VOID *v)
 	rtn = RTN_FindByName(img, "realloc");
 	if(rtn.is_valid())
 	{
+		DEBUG("Found realloc in %s\n", IMG_Name(img).c_str());
 		RTN_Open(rtn);
 		RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)RecordReallocInvocation, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
 		RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)RecordReallocReturned, IARG_FUNCRET_EXITPOINT_VALUE, IARG_RETURN_IP, IARG_END);
@@ -531,6 +654,7 @@ static VOID Image(IMG img, VOID *v)
 	rtn = RTN_FindByName(img, "calloc");
 	if(rtn.is_valid())
 	{
+		DEBUG("Found calloc in %s\n", IMG_Name(img).c_str());
 		RTN_Open(rtn);
 		RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)RecordCallocInvocation, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
 		RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)RecordCallocReturned, IARG_FUNCRET_EXITPOINT_VALUE, IARG_RETURN_IP, IARG_END);
