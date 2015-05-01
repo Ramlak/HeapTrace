@@ -11,14 +11,13 @@ from idaapi import Form, Choose2, plugin_t
 import os
 import binascii
 import string
-import textwrap
 import copy
-import csv
-import itertools
+from time import sleep
+import threading
 
 from struct import pack, unpack
 from ctypes import *
-from socket import socket, AF_INET, SOCK_STREAM, timeout
+from socket import socket, AF_INET, SOCK_STREAM, timeout, error
 
 HEAPTRACER_VERSION = "0.1"
 
@@ -29,17 +28,17 @@ class Packet(Structure):
     def export(self):
         return buffer(self)[:]
 
-    def fill(self):
+    def fill(self, bytes):
         memmove(addressof(self), bytes, min(len(bytes), sizeof(self)))
         return self
 
     def __str__(self):
         return self.export()
 
-    def __getitem_(self, i):
+    def __getitem__(self, i):
         if not isinstance(i, int):
             raise TypeError('subindices must be integers %r', i)
-        return self._fields_[i][0], getattr(self, self._fields_[i][1])
+        return self._fields_[i][0], getattr(self, self._fields_[i][0])
 
     def text_dump(self, recursion=0):
         string = ""
@@ -49,7 +48,7 @@ class Packet(Structure):
             string += " "*(20*recursion) + name.ljust(20)
             if isinstance(val, Packet):
                 string += "\n"
-                string += val.dump(recursion=recursion+1)
+                string += val.text_dump(recursion=recursion+1)
             else:
                 if isinstance(val, (int, long)):
                     string += hex(val).ljust(20) + "\n"
@@ -59,17 +58,17 @@ class Packet(Structure):
 
 
 # Communication packets declarations for 32 and 64 bit
-CTT_ACK				=	0,  #	do nothing
-CTT_ERROR			=	1,  #	signal an error
-CTT_HELLO			=	2,  #	first packet
-CTT_READ_MEMORY		=	3,  #	read 'size' bytes of memory from 'data'
-CTT_WRITE_MEMORY	=	4,  #	write 'size' bytes to 'data'
-CTT_START_PROCESS	=	5,  #	start application
-CTT_EXIT_PROCESS	=	6,  #	exit process
-CTT_HEAP_INFO		=	7,  #	get heap info
-CTT_CHECK_HEAP_OP	=	8,  # 	check for heap operations
-CTT_GET_HEAP_OP		=	9,  #	get heap operations
-CTT_END             =   10,
+CTT_ACK				=	0  #	do nothing
+CTT_ERROR			=	1  #	signal an error
+CTT_HELLO			=	2  #	first packet
+CTT_READ_MEMORY		=	3  #	read 'size' bytes of memory from 'data'
+CTT_WRITE_MEMORY	=	4  #	write 'size' bytes to 'data'
+CTT_START_PROCESS	=	5  #	start application
+CTT_EXIT_PROCESS	=	6  #	exit process
+CTT_HEAP_INFO		=	7  #	get heap info
+CTT_CHECK_HEAP_OP	=	8  # 	check for heap operations
+CTT_GET_HEAP_OP		=	9  #	get heap operations
+CTT_END             =   10
 
 heap_op_type_t = ["IDLE", "MALLOC", "REALLOC", "CALLOC", "FREE"]
 
@@ -133,6 +132,7 @@ class idacmd_packet_t_64(Packet):
     ]
 
 idacmd_packet_t = None
+heap_op_packet_t = None
 
 
 class PinConnection(socket):
@@ -143,26 +143,31 @@ class PinConnection(socket):
         self.settimeout(1)
         try:
             self.connect((host, port))
-            assert(self.bits == self.hello())
+            assert self.bits == self.hello()
             self.running = True
         except timeout:
             idaapi.warning("Cannot connect!")
 
     def send_cmd(self, **kwargs):
-        self.send(str(idacmd_packet_t(**kwargs)))
+        self.sendall(str(idacmd_packet_t(**kwargs)))
         return self.get_ans()
 
     def get_ans(self):
         return self.recv(1024)
 
     def exit(self):
-        self.send_cmd()
+        self.send_cmd(CTT_EXIT_PROCESS)
 
     def hello(self):
-        return idacmd_packet_t().fill(self.send_cmd(code=CTT_HELLO)).size * 8
+        return idacmd_packet_t().fill(self.send_cmd(code=CTT_HELLO)).data * 8
 
     def get_heap_ops(self):
-        self.send_cmd(code=CTT_CHECK_HEAP_OP)
+        left = idacmd_packet_t().fill(self.send_cmd(code=CTT_CHECK_HEAP_OP)).size
+        ops = []
+        while left > 0:
+            ops.append(heap_op_packet_t().fill(self.send_cmd(code=CTT_GET_HEAP_OP)))
+            left -= 1
+        return ops
 
 
 class HeapTracer(object):
@@ -170,17 +175,42 @@ class HeapTracer(object):
         self.trace = []
         self.connection = None
         self.settings = settings
+        global idacmd_packet_t, heap_op_packet_t
+        if self.settings.bits == 32:
+            idacmd_packet_t = idacmd_packet_t_32
+            heap_op_packet_t = heap_op_packet_t_32
+        elif self.settings.bits == 64:
+            idacmd_packet_t = idacmd_packet_t_64
+            heap_op_packet_t = heap_op_packet_t_64
+        else:
+            idaapi.warning("WTF! Bits not 32 or 64!?")
 
     def new_trace(self):
         self.trace = []
         self.connection = PinConnection(self.settings.host, self.settings.port, self.settings.bits)
+
         if not self.connection.running:
             self.show_heaptracer_menu()
+            return
+
+        while 1:
+            try:
+                ops = self.connection.get_heap_ops()
+                for op in ops:
+                    print "="*10+heap_op_type_t[op.code]+"="*10
+                    print op.text_dump()
+                sleep(0.3)
+            except error:
+                self.connection.running = False
+                idaapi.warning("Process finished!")
+                break
 
     def show_heaptracer_menu(self):
         f = ConfigureForm(self)
         ok = f.Execute()
         if ok == 1:
+            f.Free()
+            self.new_trace()
             pass
         f.Free()
 
@@ -233,10 +263,9 @@ Executable path<##:{strExecPath}>
             self.heaptracer.settings.exec_path = self.GetControlValue(self.strExecPath)
             self.heaptracer.settings.host = self.GetControlValue(self.strHost)
             self.heaptracer.settings.port = self.GetControlValue(self.intPort)
-            self.heaptracer.new_trace()
-            pass
+            return 1
 
-        return 1
+        return 0
 
     def pattern_create(self, size):
         return
