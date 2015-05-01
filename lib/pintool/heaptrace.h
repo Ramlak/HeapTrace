@@ -5,6 +5,8 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <vector>
+
 #include <deque>
 #include <map>
 
@@ -57,10 +59,9 @@ struct heap_op_packet_t			//	standard packet registering heap operations
 {
 	heap_op_type_t code;
 	ADDRINT return_value;
-	ADDRINT return_ip;
+	ADDRINT call_addr;
 	ADDRINT args[MAX_ARGS];
 	malloc_chunk chunk;
-
 	heap_op_packet_t()	:	code(HO_IDLE)	{}
 };
 
