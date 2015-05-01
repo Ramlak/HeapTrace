@@ -41,8 +41,8 @@ static VOID Image(IMG img, VOID *v);
 //--------------------------------------------------------------------------
 // Command line arguments
 
-KNOB<int> IdaPort(KNOB_MODE_WRITEONCE, "pintool", "p", "12345", "Port where IDA Pro connects to PIN");
-
+KNOB<int>	IdaPort(KNOB_MODE_WRITEONCE, "pintool", "p", "12345", "Port where IDA Pro connects to PIN");
+KNOB<int>	DebugValue(KNOB_MODE_WRITEONCE, "pintool", "d", "1", "Verbosity level");
 //--------------------------------------------------------------------------
 // sockets and port number
 static int srv_socket, portno, cli_socket;
@@ -673,6 +673,7 @@ int main(int argc, char **argv)
 	PIN_Init(argc, argv);
 	PIN_InitSymbols();
 	HEAP_BASE = (size_t)sbrk(0);
+	debug_tracer = DebugValue;
 	if ( !listen_to_ida() )
 		PIN_ExitApplication(-1);
 	return 0;
