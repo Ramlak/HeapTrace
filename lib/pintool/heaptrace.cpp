@@ -314,8 +314,12 @@ static VOID PIN_FAST_ANALYSIS_CALL ins_logic_cb(VOID *ip)
   }
   if(recent_heap_ops == 1)
   {
-  	if(heap_operation.code == HO_FREE)
+  	if( heap_operation.code == HO_FREE)
   		PIN_SafeCopy(&heap_operation.chunk, (ADDRINT*)(heap_operation.args[0])-2, sizeof(malloc_chunk));
+  	else if( heap_operation.code == HO_IDLE)
+  		memset(&heap_operation.chunk, 0, sizeof(malloc_chunk));
+  	else
+  		PIN_SafeCopy(&heap_operation.chunk, (ADDRINT*)(heap_operation.return_value)-2, sizeof(malloc_chunk));
   	add_last_heap_op();
   } else if(recent_heap_ops > 1)
   {
