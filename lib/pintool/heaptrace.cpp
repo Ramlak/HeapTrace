@@ -464,6 +464,8 @@ static bool handle_packet(idacmd_packet_t *res)
 		case CTT_EXIT_PROCESS:
 			MSG("Received EXIT PROCESS, exiting from process...\n");
 			run_listener = false;
+			ans.code = CTT_ACK;
+			send_packet(&ans, sizeof(idacmd_packet_t), NULL, 0, __FUNCTION__);
 			// does not return
 			PIN_ExitProcess(0);
 		case CTT_CHECK_HEAP_OP:
