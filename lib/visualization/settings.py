@@ -10,6 +10,7 @@ DEFAULT_SETTINGS = ("""
 [main]
 NEW_TERMINAL_COMMAND=xterm -e "[CMD];read"
 TCP_WRAPPER_COMMAND=socat tcp-listen:[PORT],reuseaddr exec:"[CMD]"
+PIN_SERVER_PORT=12345
 [new trace]
 USE_TCP_WRAPPER=False
 TCP_WRAPPER_PORT=1337
