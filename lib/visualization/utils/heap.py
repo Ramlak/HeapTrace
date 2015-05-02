@@ -15,6 +15,7 @@ class cmd_type_t(object):
     CTT_GET_HEAP_OP		=	9	#	get heap operations
     CTT_END	            =   10  #
 
+CMD_TYPE_T_NAMES = ["ACK", "ERROR", "HELLO", "READ MEMORY", "WRITE MEMORY", "START PROCESS", "EXIT PROCESS", "HEAP INFO", "CHECK HEAP OPERATIONS", "GET HEAP OPERATION", "END"]
 
 class Packet(Structure):
     _pack_ = 1
