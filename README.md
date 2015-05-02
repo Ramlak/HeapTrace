@@ -1,6 +1,8 @@
 # HeapTrace
 Tool to visualize heap behaviour during program execution using PIN and Python
 
+Don't use it: It's not ready yet
+
 ## Build PINtool
 
 ### 64 bit
