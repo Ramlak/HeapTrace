@@ -4,7 +4,7 @@ import shlex
 from socket import socket
 from time import time, sleep
 from utils.heap import cmd_type_t, heap_op_packet_t_32, idacmd_packet_t_64, idacmd_packet_t_32, heap_op_packet_t_64, \
-    CMD_TYPE_T_NAMES
+    CMD_TYPE_T_NAMES, Packet
 
 __author__ = 'kalmar'
 
@@ -20,7 +20,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 def getcmd(bits):
     final_cmd = ""
     pintool_path = os.path.join(ROOT_DIR, "lib/pintool/obj-{}/heaptrace.so".format(["", "ia32", "intel64"][bits/32]))
-    pin_cmd = "pin -t {} -d 2 -p {} -- {}".format(pintool_path, int(settings.get('main', 'PIN_SERVER_PORT')),  settings.get('new trace', 'EXECUTABLE'))
+    pin_cmd = "pin -t {} -d 1 -p {} -- {}".format(pintool_path, int(settings.get('main', 'PIN_SERVER_PORT')),  settings.get('new trace', 'EXECUTABLE'))
 
     if settings.get('new trace', 'USE_TCP_WRAPPER') != 'False':
         final_cmd += settings.get('main', 'TCP_WRAPPER_COMMAND').replace('[CMD]', pin_cmd).replace('[PORT]', settings.get('new trace', 'TCP_WRAPPER_PORT'))
@@ -38,8 +38,9 @@ class PinCommunication(QObject):
 
     """A worker which reads commands from a FIFO endlessly."""
 
-    got_heap_op = pyqtSignal(str)
+    got_heap_op = pyqtSignal(Packet)
     finished = pyqtSignal()
+    pin_PID = pyqtSignal(int)
 
     def __init__(self, host, port, bits, events):
         super(PinCommunication, self).__init__()
@@ -66,24 +67,22 @@ class PinCommunication(QObject):
             print "Wtf bits are wrong!!"
 
     def connect(self):
-        print "Trying to connect"
         count = time()
         while True:
             sleep(0.5)
             try:
                 self.s.connect((self.host, self.port))
+                self.s.settimeout(5)
                 self.run_loop = True
                 self.events.put(cmd_type_t.CTT_HELLO)
                 self.events.put(cmd_type_t.CTT_START_PROCESS)
-                print "Connected!"
                 break
             except error as e:
-                if error.errno == 111:
-                    if time() - count < 10000:
+                if e.errno == 111:
+                    if time() - count < 10:
                         print time() - count
                         continue
                     else:
-                        print "Cannot connect"
                         break
                 else:
                     import traceback
@@ -94,15 +93,15 @@ class PinCommunication(QObject):
             self.connect()
             while self.run_loop:
                 try:
-                    print "Entering try,except"
-                    x = self.events.get(block=0, timeout=1)
-                    print CMD_TYPE_T_NAMES[x]
-                    self.handle_event(x)
+                    self.handle_event(self.events.get(timeout=1))
                     self.events.task_done()
-                    print "End of try - task done"
                 except Empty:
-                    print "Queue empty"
                     self.events.put(cmd_type_t.CTT_CHECK_HEAP_OP)
+                except error as e:
+                    if e.errno == 32:
+                        break
+                    import traceback
+                    traceback.print_exc()
             self.finished.emit()
 
     def get_ans(self):
@@ -129,15 +128,13 @@ class PinCommunication(QObject):
             self.start_process()
 
     def check_heap_op(self):
-        print "CHECK HEAP OP"
         left = self.fill_cmd(self.send_cmd(code=cmd_type_t.CTT_CHECK_HEAP_OP)).size
-        print "%d heap operations found" % left
         while left > 0:
             self.events.put(cmd_type_t.CTT_GET_HEAP_OP)
             left -= 1
 
     def get_heap_op(self):
-        self.got_heap_op.emit(str(self.send_cmd(code=cmd_type_t.CTT_GET_HEAP_OP)))
+        self.got_heap_op.emit(self.fill_op(self.send_cmd(code=cmd_type_t.CTT_GET_HEAP_OP)))
 
     def hello(self):
         ans = self.fill_cmd(self.send_cmd(code=cmd_type_t.CTT_HELLO))
@@ -145,7 +142,7 @@ class PinCommunication(QObject):
             self.run_loop = False
 
     def start_process(self):
-        self.send_cmd(code=cmd_type_t.CTT_START_PROCESS)
+        self.pin_PID.emit(self.fill_cmd(self.send_cmd(code=cmd_type_t.CTT_START_PROCESS)).data)
 
 
 class PopenAndCall(QObject):

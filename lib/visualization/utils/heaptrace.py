@@ -1,5 +1,7 @@
 from Queue import Queue
 from PyQt5.QtCore import QThread
+import os
+import signal
 from settings import settings
 from utils.misc import getcmd, PopenAndCall, PinCommunication
 
@@ -23,29 +25,34 @@ class HeapTrace(object):
         invocation.start(self)
 
     def kill(self):
-        print "Kill them all!"
         if self.thread:
             self.thread.quit()
         if self.proc:
-            print "Terminating process!"
             self.proc.terminate()
+        try:
+            os.kill(self.pin_proc, signal.SIGKILL)
+        except Exception:
+            pass
 
-    def newHeapOperation(self, line):
-        self.log.append(line)
-        self.mainWindow.textLog.append(line)
+    def newHeapOperation(self, packet):
+        self.log.append(packet)
+        self.mainWindow.textLog.append(packet.text_dump() + "\n")
 
     def on_proc_started(self):
-        print "Started process.."
         self.mainWindow.status("Process started")
         self.events = Queue(maxsize=0)
         self.reader = PinCommunication('localhost', 12345, self.bits, self.events)
         self.thread = QThread()
         self.reader.moveToThread(self.thread)
         self.reader.got_heap_op.connect(self.newHeapOperation)
+        self.reader.pin_PID.connect(self.on_pin_pid_received)
         self.thread.started.connect(self.reader.event_loop)
         self.reader.finished.connect(self.on_reader_finished)
         self.thread.finished.connect(self.on_thread_finished)
         self.thread.start()
+
+    def on_pin_pid_received(self, pid):
+        self.pin_proc = pid
 
     def on_proc_finished(self):
         if self.thread:
@@ -54,11 +61,9 @@ class HeapTrace(object):
         self.mainWindow.status("Process finished ({} lines)".format(len(self.log)))
 
     def on_reader_finished(self):
-        print "Reader finished"
         self.kill()
         self.reader.deleteLater()
 
     def on_thread_finished(self):
-        print "Thread finished"
         self.thread.deleteLater()
         self.thread = None
