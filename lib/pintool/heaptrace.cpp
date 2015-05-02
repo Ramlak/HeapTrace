@@ -449,7 +449,7 @@ static bool handle_packet(idacmd_packet_t *res)
 	{
 		case CTT_HELLO:
 			ans.code = CTT_ACK;
-			ans.size = sizeof(ADDRINT)
+			ans.size = sizeof(ADDRINT);
 			ans.data = HEAP_BASE;
 			ret = send_packet(&ans, sizeof(idacmd_packet_t), NULL, 0, __FUNCTION__);
 		case CTT_START_PROCESS:
