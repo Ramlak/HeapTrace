@@ -131,8 +131,8 @@ class idacmd_packet_t_64(Packet):
         ("data", c_uint64),
     ]
 
-idacmd_packet_t = None
-heap_op_packet_t = None
+idacmd_packet_t = Packet
+heap_op_packet_t = Packet
 
 
 class PinConnection(socket):
@@ -140,7 +140,7 @@ class PinConnection(socket):
         super(PinConnection, self).__init__(AF_INET, SOCK_STREAM)
         self.bits = bits
         self.running = False
-        self.settimeout(1)
+        self.settimeout(2)
         try:
             self.connect((host, port))
             assert self.bits == self.hello()
@@ -159,7 +159,7 @@ class PinConnection(socket):
         self.send_cmd(CTT_EXIT_PROCESS)
 
     def hello(self):
-        return idacmd_packet_t().fill(self.send_cmd(code=CTT_HELLO)).data * 8
+        return idacmd_packet_t().fill(self.send_cmd(code=CTT_HELLO)).size * 8
 
     def get_heap_ops(self):
         left = idacmd_packet_t().fill(self.send_cmd(code=CTT_CHECK_HEAP_OP)).size
@@ -199,7 +199,7 @@ class HeapTracer(object):
                 for op in ops:
                     print "="*10+heap_op_type_t[op.code]+"="*10
                     print op.text_dump()
-                sleep(0.3)
+                sleep(1)
             except error:
                 self.connection.running = False
                 idaapi.warning("Process finished!")
@@ -211,7 +211,7 @@ class HeapTracer(object):
         if ok == 1:
             f.Free()
             self.new_trace()
-            pass
+            return
         f.Free()
 
 
