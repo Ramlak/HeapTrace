@@ -455,10 +455,10 @@ static bool handle_packet(idacmd_packet_t *res)
 			break;
 		case CTT_START_PROCESS:
 			// does not return
-			start_process();
 			ans.code =CTT_ACK;
 			ans.data = (size_t)PIN_GetPid();
 			ret = send_packet(&ans, sizeof(idacmd_packet_t), NULL, 0, __FUNCTION__);
+			start_process();
 			break;
 		case CTT_READ_MEMORY:
 			ans.size = 0;
