@@ -452,6 +452,7 @@ static bool handle_packet(idacmd_packet_t *res)
 			ans.size = sizeof(ADDRINT);
 			ans.data = HEAP_BASE;
 			ret = send_packet(&ans, sizeof(idacmd_packet_t), NULL, 0, __FUNCTION__);
+			break;
 		case CTT_START_PROCESS:
 			// does not return
 			start_process();
