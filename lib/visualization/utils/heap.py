@@ -16,6 +16,8 @@ class cmd_type_t(object):
     CTT_END	            =   10  #
 
 CMD_TYPE_T_NAMES = ["ACK", "ERROR", "HELLO", "READ MEMORY", "WRITE MEMORY", "START PROCESS", "EXIT PROCESS", "HEAP INFO", "CHECK HEAP OPERATIONS", "GET HEAP OPERATION", "END"]
+HEAP_OP_TYPE_t_NAMES = ["IDLE", "MALLOC", "REALLOC", "CALLOC", "FREE"]
+
 
 class Packet(Structure):
     _pack_ = 1
@@ -36,7 +38,7 @@ class Packet(Structure):
         return self._fields_[i][0], getattr(self, self._fields_[i][0])
 
     def text_dump(self, recursion=0):
-        string = ""
+        string = "="*10+HEAP_OP_TYPE_t_NAMES[self.code]+"="*10+"\n" if recursion == 0 else ""
         i = 0
         for name, val in self:
             i += 1
@@ -50,8 +52,6 @@ class Packet(Structure):
                 elif isinstance(val, Array):
                     string += "[" + ", ".join([hex(x) for x in val]) + "]\n"
         return string
-
-heap_op_type_t = ["IDLE", "MALLOC", "REALLOC", "CALLOC", "FREE"]
 
 
 # 32
