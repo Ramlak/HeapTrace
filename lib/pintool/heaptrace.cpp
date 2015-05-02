@@ -71,12 +71,15 @@ static bool process_exit = false;
 static bool process_started = false;
 // number of recent heap operations
 static int recent_heap_ops = 0;
+// flag is set when between invokation and return - helps with fake positives in 32 bit linking
+static int is_op_in_progress = 0;
 // first instruction visited?
 static int first_visited = false;
 // range of main executable
 ADDRINT min_address, max_address;
 // last_instruction
 static ADDRINT last_instruction;
+
 
 size_t HEAP_BASE = 0;
 
@@ -567,19 +570,25 @@ static VOID RecordReallocInvocation(ADDRINT ptr, size_t requested_size)
 	heap_operation.args[0] = ptr;
 	heap_operation.args[1] = requested_size;
 	heap_operation.call_addr = last_instruction;
+	is_op_in_progress = 1;
 }
 
 static VOID RecordReallocReturned(ADDRINT * addr)
 {
-	heap_operation.return_value=(ADDRINT)addr;
-	recent_heap_ops += 1;
+	if(is_op_in_progress)
+	{	
+		heap_operation.return_value=(ADDRINT)addr;
+		is_op_in_progress = 0;
+		recent_heap_ops += 1;
+	}
 }
 
 //--------------------------------------------------------------------------
 // malloc callbacks
 static VOID RecordMallocInvocation(size_t requested_size)
 {
-	DEBUG("Malloc(%d) invoked at %p\n", (int)requested_size, (void*)last_instruction);
+	DEBUG("malloc(%d) invoked at %p\n", (int)requested_size, (void*)last_instruction);
+	is_op_in_progress = 1;
 	heap_operation.call_addr = last_instruction;
 	heap_operation.code = HO_MALLOC;
 	heap_operation.args[0] = requested_size;
@@ -587,8 +596,13 @@ static VOID RecordMallocInvocation(size_t requested_size)
 
 static VOID RecordMallocReturned(ADDRINT * addr)
 {
-	heap_operation.return_value=(ADDRINT)addr;
-	recent_heap_ops += 1;
+	DEBUG("malloc returned %p from %p\n", addr, (void*)heap_operation.call_addr);
+	if(is_op_in_progress)
+	{	
+		heap_operation.return_value=(ADDRINT)addr;
+		is_op_in_progress = 0;
+		recent_heap_ops += 1;
+	}
 }
 
 //--------------------------------------------------------------------------
@@ -600,12 +614,17 @@ static VOID RecordCallocInvocation(size_t num, size_t requested_size) // After c
 	heap_operation.args[0] = num;
 	heap_operation.call_addr = last_instruction;
 	heap_operation.args[1] = requested_size;
+	is_op_in_progress = 1;
 }
 
 static VOID RecordCallocReturned(ADDRINT * addr)
 {
-	heap_operation.return_value=(ADDRINT)addr;
-	recent_heap_ops += 1;
+	if(is_op_in_progress)
+	{	
+		heap_operation.return_value=(ADDRINT)addr;
+		is_op_in_progress = 0;
+		recent_heap_ops += 1;
+	}
 }
 
 //--------------------------------------------------------------------------
