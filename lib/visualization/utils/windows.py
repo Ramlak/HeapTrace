@@ -42,11 +42,17 @@ class NewTraceWindow(QDialog, Ui_dialogNewTrace):
         self.textArguments.insert(settings.get('new trace', 'ARGUMENTS_TEXT'))
         self.textArgumentsFile.insert(settings.get('new trace', 'ARGUMENTS_FILE'))
         self.textStartDirectory.insert(os.path.realpath(settings.get('new trace', 'START_DIR')))
+        self.spinBoxWrapperPort.setValue(int(settings.get('new trace', 'TCP_WRAPPER_PORT')))
         if settings.get('new trace', 'ARGUMENTS_USE_FILE') != 'False':
             self.checkBoxTakeArgumentsFromFile.click()
         else:
             self.checkBoxTakeArgumentsFromFile.click()
             self.checkBoxTakeArgumentsFromFile.click()
+        if settings.get('new trace', 'USE_TCP_WRAPPER') != 'False':
+            self.checkBoxUseWrapper.click()
+        else:
+            self.checkBoxUseWrapper.click()
+            self.checkBoxUseWrapper.click()
 
     def connectEvents(self):
         self.buttonNewTraceCancel.clicked.connect(self.reject)
@@ -55,6 +61,13 @@ class NewTraceWindow(QDialog, Ui_dialogNewTrace):
         self.checkBoxTakeArgumentsFromFile.clicked.connect(self.checkBoxGetArgumentsFromFileClicked)
         self.buttonGetExecutableFile.clicked.connect(self.buttonGetExecutableFileClicked)
         self.buttonGetStartDirectory.clicked.connect(self.buttonGetStartDirectoryClicked)
+        self.checkBoxUseWrapper.clicked.connect(self.checkBoxUseWrapperClicked)
+
+    def checkBoxUseWrapperClicked(self):
+        if self.checkBoxUseWrapper.isChecked():
+            self.spinBoxWrapperPort.setDisabled(False)
+        else:
+            self.spinBoxWrapperPort.setDisabled(True)
 
     def buttonGetExecutableFileClicked(self):
         dialog = QFileDialog()
@@ -86,6 +99,8 @@ class NewTraceWindow(QDialog, Ui_dialogNewTrace):
         settings.set('new trace', 'ARGUMENTS_FILE', self.textArgumentsFile.text())
         settings.set('new trace', 'ARGUMENTS_USE_FILE', str(self.checkBoxTakeArgumentsFromFile.isChecked()))
         settings.set('new trace', 'START_DIR', os.path.realpath(self.textStartDirectory.text()))
+        settings.set('new trace', 'TCP_WRAPPER_PORT', str(self.spinBoxWrapperPort.value()))
+        settings.set('new trace', 'USE_TCP_WRAPPER', str(self.checkBoxUseWrapper.isChecked()))
         self.parent().status("Saved")
 
     def run(self):

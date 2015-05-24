@@ -1,10 +1,9 @@
-from Queue import Queue, Empty
+from Queue import Empty
 from _socket import error
 import shlex
 from socket import socket
 from time import time, sleep
-from utils.heap import cmd_type_t, heap_op_packet_t_32, idacmd_packet_t_64, idacmd_packet_t_32, heap_op_packet_t_64, \
-    CMD_TYPE_T_NAMES, Packet
+from utils.heap import cmd_type_t, heap_op_packet_t_32, idacmd_packet_t_64, idacmd_packet_t_32, heap_op_packet_t_64, Packet
 
 __author__ = 'kalmar'
 
@@ -69,7 +68,7 @@ class PinCommunication(QObject):
     def connect(self):
         count = time()
         while True:
-            sleep(0.5)
+            sleep(1)
             try:
                 self.s.connect((self.host, self.port))
                 self.s.settimeout(5)
@@ -79,7 +78,7 @@ class PinCommunication(QObject):
                 break
             except error as e:
                 if e.errno == 111:
-                    if time() - count < 10:
+                    if time() - count < 11:
                         print time() - count
                         continue
                     else:
