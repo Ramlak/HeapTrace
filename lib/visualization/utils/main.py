@@ -27,11 +27,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionLive.triggered.connect(self.showNewTraceDialog)
         self.actionConfigure.triggered.connect(self.showConfigurationDialog)
         self.actionKill.triggered.connect(self.killCurrentTrace)
-        self.actionShowHeap.triggered.connect(self.showHeapWindow)
-
-    def showHeapWindow(self):
-        heapWindow = HeapWindow(self)
-        heapWindow.show()
 
     def killCurrentTrace(self):
         if self.currentTrace:

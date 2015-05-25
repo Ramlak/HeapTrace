@@ -79,7 +79,6 @@ class Ui_MainWindow(object):
         self.menuStatistics.addAction(self.actionHeap_operations)
         self.menuProcess.addAction(self.menuStatistics.menuAction())
         self.menuProcess.addAction(self.actionKill)
-        self.menuProcess.addAction(self.actionShowHeap)
         self.menubar.addAction(self.menuFile.menuAction())
         self.menubar.addAction(self.menuProcess.menuAction())
         self.menubar.addAction(self.menuOptions.menuAction())
