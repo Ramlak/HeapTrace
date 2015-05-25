@@ -4,6 +4,7 @@ import os
 import signal
 from settings import settings
 from utils.misc import getcmd, PopenAndCall, PinCommunication
+from utils.windows import HeapWindow
 
 __author__ = 'kalmar'
 
@@ -53,6 +54,9 @@ class HeapTrace(object):
 
     def on_pin_pid_received(self, pid):
         self.pin_proc = pid
+        print self.pin_proc
+        self.heapView = HeapWindow(self.mainWindow)
+        self.heapView.show()
 
     def on_proc_finished(self):
         if self.thread:

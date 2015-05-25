@@ -1,9 +1,13 @@
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QPalette
 import os
+from utils.heap import BT
 
 __author__ = 'kalmar'
-from PyQt5.QtWidgets import QDialog, QFileDialog
+from PyQt5.QtWidgets import QDialog, QFileDialog, QDockWidget, QWidget
 from ui.configureUI import Ui_dialogConfigure
 from ui.newtraceUI import Ui_dialogNewTrace
+from ui.heapviewUI import Ui_dockHeapWindow
 from settings import settings
 
 
@@ -107,3 +111,56 @@ class NewTraceWindow(QDialog, Ui_dialogNewTrace):
         self.save()
         self.parent().traceFromExecutable()
         self.accept()
+
+
+counter = 0
+
+
+class Block(QWidget):
+    def __init__(self, block_type=BT.UNALLOCATED):
+        super(Block, self).__init__()
+        self.status = block_type
+        self.setAutoFillBackground(True)
+        self.setColor()
+        global counter
+        self.id = counter
+        counter += 1
+        self.update()
+
+    def mouseDoubleClickEvent(self, event):
+        self.status = (self.status + 1) % 3
+        self.setColor()
+        self.update()
+        print "Clicked", self.id
+
+    def setColor(self):
+        if self.status == BT.FREE:
+            color = Qt.red
+        elif self.status == BT.ALLOCATED:
+            color = Qt.green
+        elif self.status == BT.UNALLOCATED:
+            color = Qt.black
+        pallete = QPalette()
+        pallete.setColor(QPalette.Background, color)
+        self.setPalette(pallete)
+
+    def isFree(self):
+        return self.status == BT.FREE
+
+    def isAllocated(self):
+        return self.status == BT.ALLOCATED
+
+
+class HeapWindow(QDockWidget, Ui_dockHeapWindow):
+    def __init__(self, parent):
+        super(HeapWindow, self).__init__(parent)
+        self.initUi()
+
+    def initUi(self):
+        self.setupUi(self)
+        self.connectEvents()
+
+        self.layoutHeapView.insertWidget(1, Block(BT.UNALLOCATED))
+
+    def connectEvents(self):
+        pass

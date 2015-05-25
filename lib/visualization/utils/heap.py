@@ -19,6 +19,12 @@ CMD_TYPE_T_NAMES = ["ACK", "ERROR", "HELLO", "READ MEMORY", "WRITE MEMORY", "STA
 HEAP_OP_TYPE_t_NAMES = ["IDLE", "MALLOC", "REALLOC", "CALLOC", "FREE"]
 
 
+class BT(object):
+    UNALLOCATED = 0
+    FREE = 1
+    ALLOCATED = 2
+
+
 class Packet(Structure):
     _pack_ = 1
 

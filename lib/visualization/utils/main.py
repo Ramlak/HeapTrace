@@ -4,7 +4,7 @@ __author__ = 'kalmar'
 
 from PyQt5.QtWidgets import QMainWindow, QApplication, QDesktopWidget, qApp, QInputDialog, QDialog
 from ui.mainUI import Ui_MainWindow
-from utils.windows import ConfigureWindow, NewTraceWindow
+from utils.windows import ConfigureWindow, NewTraceWindow, HeapWindow
 from settings import settings
 
 
@@ -27,6 +27,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionLive.triggered.connect(self.showNewTraceDialog)
         self.actionConfigure.triggered.connect(self.showConfigurationDialog)
         self.actionKill.triggered.connect(self.killCurrentTrace)
+        self.actionShowHeap.triggered.connect(self.showHeapWindow)
+
+    def showHeapWindow(self):
+        heapWindow = HeapWindow(self)
+        heapWindow.show()
 
     def killCurrentTrace(self):
         if self.currentTrace:

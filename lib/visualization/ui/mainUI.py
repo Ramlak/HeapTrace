@@ -66,6 +66,8 @@ class Ui_MainWindow(object):
         self.actionKill.setObjectName("actionKill")
         self.actionHeap_operations = QtWidgets.QAction(MainWindow)
         self.actionHeap_operations.setObjectName("actionHeap_operations")
+        self.actionShowHeap = QtWidgets.QAction(MainWindow)
+        self.actionShowHeap.setObjectName("actionShowHeap")
         self.menuNew_trace.addAction(self.actionLive)
         self.menuNew_trace.addAction(self.actionFrom_file)
         self.menuFile.addAction(self.menuNew_trace.menuAction())
@@ -77,6 +79,7 @@ class Ui_MainWindow(object):
         self.menuStatistics.addAction(self.actionHeap_operations)
         self.menuProcess.addAction(self.menuStatistics.menuAction())
         self.menuProcess.addAction(self.actionKill)
+        self.menuProcess.addAction(self.actionShowHeap)
         self.menubar.addAction(self.menuFile.menuAction())
         self.menubar.addAction(self.menuProcess.menuAction())
         self.menubar.addAction(self.menuOptions.menuAction())
@@ -109,4 +112,5 @@ class Ui_MainWindow(object):
         self.actionKill.setText(_translate("MainWindow", "Kill"))
         self.actionKill.setShortcut(_translate("MainWindow", "Ctrl+C"))
         self.actionHeap_operations.setText(_translate("MainWindow", "Heap operations"))
+        self.actionShowHeap.setText(_translate("MainWindow", "Show heap"))
 
