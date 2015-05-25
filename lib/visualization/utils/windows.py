@@ -122,16 +122,10 @@ class Block(QWidget):
         self.status = block_type
         self.setAutoFillBackground(True)
         self.setColor()
-        global counter
-        self.id = counter
-        counter += 1
-        self.update()
 
     def mouseDoubleClickEvent(self, event):
         self.status = (self.status + 1) % 3
         self.setColor()
-        self.update()
-        print "Clicked", self.id
 
     def setColor(self):
         if self.status == BT.FREE:
@@ -143,6 +137,19 @@ class Block(QWidget):
         pallete = QPalette()
         pallete.setColor(QPalette.Background, color)
         self.setPalette(pallete)
+        self.update()
+
+    def setFree(self):
+        self.status = BT.FREE
+        self.setColor()
+
+    def setAllocated(self):
+        self.status = BT.ALLOCATED
+        self.setColor()
+
+    def setUnallocated(self):
+        self.status = BT.UNALLOCATED
+        self.setColor()
 
     def isFree(self):
         return self.status == BT.FREE
