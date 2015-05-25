@@ -19,7 +19,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 def getcmd(bits):
     final_cmd = ""
     pintool_path = os.path.join(ROOT_DIR, "lib/pintool/obj-{}/heaptrace.so".format(["", "ia32", "intel64"][bits/32]))
-    pin_cmd = "pin -t {} -d 1 -p {} -- {}".format(pintool_path, int(settings.get('main', 'PIN_SERVER_PORT')),  settings.get('new trace', 'EXECUTABLE'))
+    pin_cmd = "pin -t {} -d 0 -p {} -- {}".format(pintool_path, int(settings.get('main', 'PIN_SERVER_PORT')),  settings.get('new trace', 'EXECUTABLE'))
 
     if settings.get('new trace', 'USE_TCP_WRAPPER') != 'False':
         final_cmd += settings.get('main', 'TCP_WRAPPER_COMMAND').replace('[CMD]', pin_cmd).replace('[PORT]', settings.get('new trace', 'TCP_WRAPPER_PORT'))
