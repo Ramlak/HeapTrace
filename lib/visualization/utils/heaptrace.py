@@ -54,7 +54,6 @@ class HeapTrace(object):
 
     def on_pin_pid_received(self, pid):
         self.pin_proc = pid
-        print self.pin_proc
         self.heapView = HeapWindow(self.mainWindow)
         self.heapView.show()
 
@@ -62,6 +61,7 @@ class HeapTrace(object):
         if self.thread:
             self.thread.quit()
         self.proc = None
+        self.kill()
         self.mainWindow.status("Process finished ({} lines)".format(len(self.log)))
 
     def on_reader_finished(self):
