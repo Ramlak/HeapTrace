@@ -35,7 +35,7 @@ class HeapTrace(object):
         except Exception:
             pass
 
-    def newHeapOperation(self, packet):
+    def on_got_heap_op(self, packet):
         self.log.append(packet)
         self.mainWindow.textLog.append(packet.text_dump() + "\n")
 
@@ -45,7 +45,7 @@ class HeapTrace(object):
         self.reader = PinCommunication('localhost', 12345, self.bits, self.events)
         self.thread = QThread()
         self.reader.moveToThread(self.thread)
-        self.reader.got_heap_op.connect(self.newHeapOperation)
+        self.reader.got_heap_op.connect(self.on_got_heap_op)
         self.reader.pin_PID.connect(self.on_pin_pid_received)
         self.thread.started.connect(self.reader.event_loop)
         self.reader.finished.connect(self.on_reader_finished)
