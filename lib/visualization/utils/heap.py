@@ -2,6 +2,14 @@ __author__ = 'kalmar'
 from ctypes import *
 
 
+class heap_op_type_t(object):
+    PKT_IDLE = 0
+    PKT_MALLOC = 1
+    PKT_REALLOC = 2
+    PKT_CALLOC = 3
+    PKT_FREE = 4
+
+
 class cmd_type_t(object):
     CTT_ACK				=	0	#	do nothing
     CTT_ERROR			=	1	#	signal an error

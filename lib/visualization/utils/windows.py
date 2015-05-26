@@ -1,7 +1,7 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPalette
 import os
-from utils.heap import BT
+from utils.heap import BT, heap_op_type_t
 
 __author__ = 'kalmar'
 from PyQt5.QtWidgets import QDialog, QFileDialog, QDockWidget, QWidget
@@ -117,14 +117,31 @@ counter = 0
 
 
 class Block(QWidget):
-    def __init__(self, block_type=BT.UNALLOCATED):
+    def __init__(self, packet):
         super(Block, self).__init__()
-        self.status = block_type
+        self.packet = packet
         self.setAutoFillBackground(True)
+        self.parsePacket()
         self.setColor()
 
     def mouseDoubleClickEvent(self, event):
         self.status = (self.status + 1) % 3
+        self.setColor()
+
+    def parsePacket(self):
+        code = self.packet.code
+        if code == heap_op_type_t.PKT_FREE:
+            self.status = BT.FREE
+            self.base_addr = self.packet.args[0]
+        elif code == heap_op_type_t.PKT_IDLE:
+            self.status = BT.UNALLOCATED
+        else:
+            self.status = BT.ALLOCATED
+            self.base_addr = self.packet.return_value
+
+    def new_packet(self, packet):
+        self.packet = packet
+        self.parsePacket()
         self.setColor()
 
     def setColor(self):
@@ -167,7 +184,8 @@ class HeapWindow(QDockWidget, Ui_dockHeapWindow):
         self.setupUi(self)
         self.connectEvents()
 
-        self.layoutHeapView.insertWidget(1, Block(BT.UNALLOCATED))
+    def push_new_block(self, block):
+        self.layoutHeapView.addChildWidget(block)
 
     def connectEvents(self):
         pass

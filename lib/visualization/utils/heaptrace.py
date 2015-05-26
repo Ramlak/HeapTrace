@@ -1,10 +1,11 @@
 from Queue import Queue
-from PyQt5.QtCore import QThread
+from PyQt5.QtCore import QThread, QObject
 import os
 import signal
 from settings import settings
+from utils.heap import heap_op_type_t
 from utils.misc import getcmd, PopenAndCall, PinCommunication
-from utils.windows import HeapWindow
+from utils.windows import HeapWindow, Block
 
 __author__ = 'kalmar'
 
@@ -15,6 +16,7 @@ class HeapTrace(object):
         self.reader = None
         self.thread = None
         self.proc = None
+        self.blocks = []
 
     def run(self):
         self.log = []
@@ -35,7 +37,32 @@ class HeapTrace(object):
         except Exception:
             pass
 
+    def find_block_by_addr(self, addr):
+        for i, block in enumerate(self.heapView.layoutHeapView.children()):
+            print block
+            if block.base_addr == addr:
+                return i, block
+        return None, None
+
     def on_got_heap_op(self, packet):
+        if packet.code == heap_op_type_t.PKT_FREE:
+            i, freed = self.find_block_by_addr(packet.args[0])
+            if freed == None:
+                print "Hacking is not nice."
+            else:
+                freed.new_packet(packet)
+        else:
+            i, old = self.find_block_by_addr(packet.return_value)
+            if not old:
+                block = Block(packet)
+                self.heapView.push_new_block(block)
+                self.blocks.append(block)
+            else:
+                if old.packet.chunk.size != packet.chunk.size:
+                    self.heapView.layoutHeapView.removeWidget(old)
+                else:
+                    old.new_packet(packet)
+
         self.log.append(packet)
         self.mainWindow.textLog.append(packet.text_dump() + "\n")
 
