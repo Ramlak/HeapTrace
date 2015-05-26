@@ -18,6 +18,7 @@ class Ui_dockHeapWindow(object):
         self.horizontalLayout_2 = QtWidgets.QHBoxLayout(self.dockWidgetContents)
         self.horizontalLayout_2.setObjectName("horizontalLayout_2")
         self.layoutHeapView = QtWidgets.QHBoxLayout()
+        self.layoutHeapView.setSpacing(0)
         self.layoutHeapView.setObjectName("layoutHeapView")
         self.horizontalLayout_2.addLayout(self.layoutHeapView)
         dockHeapWindow.setWidget(self.dockWidgetContents)

@@ -2,9 +2,9 @@ from utils.heaptrace import HeapTrace
 
 __author__ = 'kalmar'
 
-from PyQt5.QtWidgets import QMainWindow, QApplication, QDesktopWidget, qApp, QInputDialog, QDialog
+from PyQt5.QtWidgets import QMainWindow, QApplication, QDesktopWidget, qApp
 from ui.mainUI import Ui_MainWindow
-from utils.windows import ConfigureWindow, NewTraceWindow, HeapWindow
+from utils.windows import ConfigureWindow, NewTraceWindow
 from settings import settings
 
 
